@@ -1,0 +1,17 @@
+# ASEAN Property Settlement — Policy Pack v1 (strict)
+# pack_id: asean-property-settlement-v1-strict
+# Tighter institutional thresholds for SG/MY — used in policy-evolution simulation.
+# Synthetic demo only — not legal advice.
+
+rules:
+  - id: payee-must-match-developer-feed
+    require: payee_verified == true
+
+  - id: capital-not-red
+    require: capital_class < 2
+
+  - id: asean-jurisdictions-only
+    require: jurisdiction == "TH" or jurisdiction == "SG" or jurisdiction == "MY"
+
+  - id: institutional-threshold-sg-my-strict
+    require: jurisdiction == "TH" or amount_usdc <= 300000000000 or buyer_kyc_tier >= 4

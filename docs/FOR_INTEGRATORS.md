@@ -57,6 +57,17 @@ Banks fork YAML rules under [`data/policies/`](../data/policies/):
 ATTESTRWA_POLICY_FILE=data/policies/asean-property-settlement-v1.yaml
 ```
 
+Responses include `policy_pack_id` and `policy_hash` (bound into `evidence_hash`).
+
+**Policy evolution** (regulatory change without escrow migration):
+
+```bash
+./scripts/simulate-policy-evolution.sh
+uv run --directory apps/api python ../../scripts/run_rwa_scenarios.py --check
+```
+
+See [`POLICY_EVOLUTION.md`](POLICY_EVOLUTION.md) and [`PRODUCTION_ROADMAP.md`](PRODUCTION_ROADMAP.md).
+
 ## Production blockers
 
 No mainnet deploy without external audit. See [`SECURITY.md`](SECURITY.md):

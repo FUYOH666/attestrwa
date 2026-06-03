@@ -7,7 +7,7 @@
 
 [![CI](https://github.com/FUYOH666/attestrwa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FUYOH666/attestrwa/actions/workflows/ci.yml)
 [![Foundry tests](https://img.shields.io/badge/forge%20test-34%2F34-success)](contracts/test)
-[![pytest](https://img.shields.io/badge/pytest-69%2F69-success)](apps/api/tests)
+[![pytest](https://img.shields.io/badge/pytest-75%2F75-success)](apps/api/tests)
 [![Slither](https://img.shields.io/badge/slither-0%20findings-success)](docs/SECURITY.md)
 [![Solidity](https://img.shields.io/badge/solidity-0.8.26-blue)](contracts/foundry.toml)
 [![Foundry](https://img.shields.io/badge/foundry-1.7.1-orange)](https://book.getfoundry.sh/)
@@ -195,6 +195,8 @@ This is RWA growing up.
 | [`docs/QUANTUM_LEAP_BETS.md`](docs/QUANTUM_LEAP_BETS.md) | Top 5 non-linear leverage plays |
 | [`docs/OSS_OPERATING_PLAN_90DAY.md`](docs/OSS_OPERATING_PLAN_90DAY.md) | Community, metrics, funding map |
 | [`docs/OUTREACH_TARGETS.md`](docs/OUTREACH_TARGETS.md) | Shibui / Centrifuge / EAS outreach drafts |
+| [`docs/POLICY_EVOLUTION.md`](docs/POLICY_EVOLUTION.md) | Policy change without escrow migration |
+| [`docs/PRODUCTION_ROADMAP.md`](docs/PRODUCTION_ROADMAP.md) | Production engineering map |
 | [`examples/integrate-centrifuge-hook/`](examples/integrate-centrifuge-hook/README.md) | Transfer-hook integration cookbook |
 
 ## Roadmap

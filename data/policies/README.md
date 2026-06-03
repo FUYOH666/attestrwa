@@ -30,6 +30,11 @@ rules:
 See [`default_attestrwa_policy.yaml`](../synthetic/policies/default_attestrwa_policy.yaml)
 for the baseline demo policy.
 
+| Pack | File |
+|------|------|
+| ASEAN v1 | `asean-property-settlement-v1.yaml` |
+| ASEAN strict (evolution demo) | `asean-property-settlement-v1-strict.yaml` |
+
 ## Selecting a pack
 
 ```bash

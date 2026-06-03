@@ -1,4 +1,5 @@
 # Default AttestRWA compliance policy.
+# pack_id: default-attestrwa-policy
 #
 # Banks publish their own policy packs as YAML; this one is the baseline used
 # by the demo attester. Each rule's `require` expression is evaluated against

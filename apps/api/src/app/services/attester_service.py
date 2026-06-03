@@ -18,6 +18,7 @@ propagate as `AttesterError` for the FastAPI handler to translate.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -75,6 +76,8 @@ class AttesterDecision:
     rule_results: list[dict[str, Any]] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     evidence_hash: bytes = b"\x00" * 32
+    policy_pack_id: str = ""
+    policy_hash: str = ""
     taint: TaintReport | None = None
     expires_at: int = 0
 
@@ -97,6 +100,25 @@ def _policy_path() -> Path:
 def policy_file_display() -> str:
     """Resolved policy path for health/readiness endpoints."""
     return str(_policy_path())
+
+
+def policy_provenance() -> tuple[str, str]:
+    """Return (policy_pack_id, policy_hash) for the active policy file."""
+    path = _policy_path()
+    if not path.is_file():
+        raise AttesterError(f"compliance policy file not found: {path}")
+    content = path.read_bytes()
+    policy_hash = "0x" + hashlib.sha256(content).hexdigest()
+    pack_id = _extract_policy_pack_id(path, content)
+    return pack_id, policy_hash
+
+
+def _extract_policy_pack_id(path: Path, content: bytes) -> str:
+    for line in content.decode("utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("# pack_id:"):
+            return stripped.split(":", 1)[1].strip()
+    return path.stem
 
 
 def load_policy_rules() -> list[Rule]:
@@ -141,6 +163,7 @@ def decide_for_deal(request: DealRequest) -> AttesterDecision:
     feed = _load_developer_feed(request.developer_id)
     payee_verified = _payee_verified(feed, request.payee_wallet)
     taint = classify_wallet(request.buyer_wallet)
+    policy_pack_id, policy_hash = policy_provenance()
     rules = load_policy_rules()
     context: dict[str, Any] = {
         "payee_verified": payee_verified,
@@ -173,6 +196,8 @@ def decide_for_deal(request: DealRequest) -> AttesterDecision:
         f"taint_signals={','.join(taint.signals) or 'none'}",
         f"amount_base_units={request.amount_base_units}",
         f"jurisdiction={request.jurisdiction}",
+        f"policy_pack_id={policy_pack_id}",
+        f"policy_hash={policy_hash}",
         f"policy_decision={evaluation.decision}",
     ]
     evidence_hash = build_default_evidence_hash(*evidence_parts)
@@ -193,6 +218,8 @@ def decide_for_deal(request: DealRequest) -> AttesterDecision:
         ],
         reasons=reasons,
         evidence_hash=evidence_hash,
+        policy_pack_id=policy_pack_id,
+        policy_hash=policy_hash,
         taint=taint,
         expires_at=expires_at,
     )

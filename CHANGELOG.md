@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- Policy Evolution Proof Pack:
+  `policy_pack_id` + `policy_hash` on `POST /attest/settlement` (included in
+  `evidence_hash`), `docs/POLICY_EVOLUTION.md`, `docs/PRODUCTION_ROADMAP.md`,
+  `data/policies/asean-property-settlement-v1-strict.yaml`,
+  `scripts/simulate-policy-evolution.sh`, `scripts/run_rwa_scenarios.py`,
+  `docs/RWA_SCENARIO_REPORT.md`, tests `test_policy_provenance.py` /
+  `test_policy_evolution.py`.
 - Life-flow readiness (May 2026):
   `docs/FOR_INTEGRATORS.md`, `docs/INBOUND_PLAYBOOK.md`, `docs/LAYERED_TRUST.md`,
   `docs/MULTI_ATTESTER.md`, `FUNDING.md`.

@@ -279,6 +279,8 @@ def post_attest_settlement(body: AttestRequest) -> dict[str, object]:
         if decision.taint is not None
         else None,
         "evidence_hash": "0x" + decision.evidence_hash.hex(),
+        "policy_pack_id": decision.policy_pack_id,
+        "policy_hash": decision.policy_hash,
         "expires_at": decision.expires_at,
         "attestation_uid": attestation_uid,
         "tx_hash": tx_hash,

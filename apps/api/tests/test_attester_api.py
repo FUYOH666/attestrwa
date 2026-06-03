@@ -35,6 +35,8 @@ def test_attest_happy_body() -> None:
     assert body["capital_class"] == 0
     assert body["reasons"] == []
     assert body["evidence_hash"].startswith("0x")
+    assert body["policy_pack_id"]
+    assert body["policy_hash"].startswith("0x")
     assert "rule_results" in body and len(body["rule_results"]) > 0
 
 

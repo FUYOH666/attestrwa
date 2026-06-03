@@ -63,6 +63,8 @@ class AttestResponse(BaseModel):
     rule_results: list[RuleResultPayload]
     taint: TaintReportPayload | None
     evidence_hash: str
+    policy_pack_id: str
+    policy_hash: str
     expires_at: int
     attestation_uid: str | None = None
     tx_hash: str | None = None
