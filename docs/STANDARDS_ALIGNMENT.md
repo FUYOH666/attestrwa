@@ -35,11 +35,11 @@ Last updated: **2026-05-31**.
 
 ### Action 1 — EEA / Shibui
 
-**Type:** GitHub Discussion or Issue  
-**Target:** [rnd-rwa-erc3643-eas issues](https://github.com/EntEthAlliance/rnd-rwa-erc3643-eas/issues)  
-**Title:** `Proposal: Settlement vs Eligibility — composable EAS topics for RWA`  
-**Body outline:** Link RFC-0001, offer joint Base Sepolia demo, ask for topic
-registry slot for settlement attestations.
+**Status (2026-07-28):** [Issue #97](https://github.com/EntEthAlliance/rnd-rwa-erc3643-eas/issues/97) closed by @Redoudou — Shibui stays eligibility-only; AttestRWA composes externally (RFC-0001, `demo-composed-flow.sh`). **Do not reopen** or ask to register settlement topics in their repo.
+
+**Follow-up:** LinkedIn acknowledgment — [`docs/outreach/linkedin-redwan-issue-97.md`](outreach/linkedin-redwan-issue-97.md).
+
+**Future agents:** Use updated draft in [`OUTREACH_TARGETS.md`](OUTREACH_TARGETS.md) (no topic registration ask).
 
 ---
 

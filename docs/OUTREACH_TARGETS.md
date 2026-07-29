@@ -31,20 +31,27 @@ RFC: https://github.com/FUYOH666/attestrwa/blob/main/docs/rfc/0001-settlement-el
 ## Proposal
 
 1. Document composition: `isVerified(wallet)` + `SettlementApproval(dealId)`.
-2. Joint Base Sepolia demo script (buyer eligible → deposit → attestation → release).
-3. Optional: register a Shibui **topic** for settlement attestations or cross-link schemas.
+2. Point to external Apache-2.0 reference: `./scripts/demo-composed-flow.sh` and
+   `examples/composed-eligibility-settlement/` in AttestRWA (no in-repo registration).
+
+## Do not propose (learned from issue #97 closure)
+
+- Registering settlement schemas or topics **inside** Shibui / rnd-rwa-erc3643-eas.
+- Asking Shibui to host other teams' attester relationships or escrow layers.
+
+Integration = call `isVerified()` and build settlement attestation **on top**.
 
 ## Evidence
 
 - E2E: `./scripts/e2e_rwa_flow.sh` and `./scripts/e2e_rwa_reject.sh`
+- Composed: `./scripts/demo-composed-flow.sh`
 - Schema UID: `0x1f64ec96216b0381dc4443b7378c57485f2217656537e8ea36f0b23af047cc96`
 - 85s demo: https://youtube.com/shorts/BipB2qPzZz0
 
-Happy to open a PR against Shibui docs or a shared `examples/composed-flow/` folder.
-
 ## Non-goals
 
-We are not proposing changes to ERC-3643 core — only EAS topic composition.
+We are not proposing changes to ERC-3643 core or Shibui scope — only external
+composition documentation.
 ```
 
 ---
@@ -136,7 +143,8 @@ GitHub redirects `bankable-property-network` → `attestrwa` automatically for a
 
 | Date | Target | Action | Response |
 |------|--------|--------|----------|
-| 2026-05-31 | Shibui | [Issue #97](https://github.com/EntEthAlliance/rnd-rwa-erc3643-eas/issues/97) | Awaiting response |
+| 2026-05-31 | Shibui / EEA | [Issue #97](https://github.com/EntEthAlliance/rnd-rwa-erc3643-eas/issues/97) opened | **2026-07-28** @Redoudou closed out of scope — eligibility vs settlement boundary; compose via `isVerified()`, do not register our schemas in Shibui repo. **Do not reopen** unless they ask. |
+| 2026-07-29 | Redwan Meslem | LinkedIn follow-up draft | [`docs/outreach/linkedin-redwan-issue-97.md`](outreach/linkedin-redwan-issue-97.md) — send manually; acknowledge + RFC-0001 link |
 | 2026-05-31 | Centrifuge | [Issue #828](https://github.com/centrifuge/protocol/issues/828) (discussions disabled) | Awaiting response |
 | — | EAS | PR | — |
 

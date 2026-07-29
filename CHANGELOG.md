@@ -19,8 +19,12 @@
 - `apps/api/tests/test_policy_packs.py` — ASEAN policy pack vectors.
 - `TaintProvider` protocol + `ChainalysisStubProvider` in `wallet_taint.py`.
 - Extended `GET /attest/healthz` with `policy_file`, `repo_version`, `dev_chain_reachable`.
+- `docs/outreach/linkedin-redwan-issue-97.md` — LinkedIn follow-up after EEA issue #97.
 
 ### Changed
+- EEA Shibui outreach: issue #97 response logged; draft issue in
+  `docs/OUTREACH_TARGETS.md` no longer asks to register settlement topics in
+  Shibui repo; `docs/STANDARDS_ALIGNMENT.md` Action 1 marked closed/follow-up.
 - `.env.example` rebranded to `ATTESTRWA_*` (legacy `BANKABLE_*` aliases in config).
 - `data/policies/asean-property-settlement-v1.yaml` — valid Compliance DSL (`rules[].require`).
 - README: integrator link, public testnet proof section.
