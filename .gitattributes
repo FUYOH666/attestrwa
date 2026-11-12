@@ -1,0 +1,12 @@
+# Policy packs, registries, specs and example records are hashed byte-for-byte.
+# Keep line endings stable on every platform so the hashes stay reproducible.
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+*.md   text eol=lf
+*.sol  text eol=lf
+*.py   text eol=lf
+*.sh   text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf

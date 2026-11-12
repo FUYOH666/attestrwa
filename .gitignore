@@ -26,3 +26,15 @@ contracts/lib/
 
 # Anvil / dev chain logs
 /tmp/attestrwa-anvil.*
+
+# Local chain / deployment state (may hold keys) and attester record store
+*.state
+.env.*
+!.env.example
+records/
+apps/api/records/
+
+# Python tooling
+.ruff_cache/
+dist/
+*.egg-info/

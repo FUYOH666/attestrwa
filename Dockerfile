@@ -2,18 +2,16 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+COPY packages packages
 COPY apps/api/pyproject.toml apps/api/uv.lock apps/api/
 COPY apps/api/src apps/api/src
 COPY data data
-COPY config config
+COPY spec spec
 
 WORKDIR /app/apps/api
 
 RUN pip install --no-cache-dir uv \
     && uv sync --frozen --no-dev
-
-ENV BANKABLE_API_HOST=0.0.0.0
-ENV BANKABLE_API_PORT=8080
 
 EXPOSE 8080
 
