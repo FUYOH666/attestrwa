@@ -1,40 +1,54 @@
 """Independent verification of a decision record.
 
 The verifier answers one question: *does this record explain the decision
-that is anchored on-chain, and does the decision follow from the record?*
+that was anchored, and does the decision follow from the record?*
 
 It never trusts the envelope around a record. Offline it recomputes the hash
-and replays the rules. Given an RPC endpoint it reads the EAS attestation and
-the escrow's own state and compares both with the record. Given the policy
-and registry files it confirms the record applied exactly those bytes.
+and replays the rules. Given the policy and registry files it confirms the
+record applied exactly those bytes. Then it checks the anchor:
+
+- an escrowed deal: given an RPC endpoint, it reads the EAS attestation and
+  the escrow's own state and compares both with the record;
+- a case (format 0.2): it checks the Ed25519 signature over the record hash,
+  the signer against a key the caller trusts, and any supplied documents and
+  model outputs against the hashes the record cites.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from attestrwa import rpc as chain
 from attestrwa.canonical import CanonicalError
 from attestrwa.eas import DECISION_CODES, DecisionDataError, decode_decision, schema_uid
-from attestrwa.hashing import is_hex, to_hex
+from attestrwa.hashing import is_hex, sha256, to_hex
 from attestrwa.policy import DSLError, PolicyPack, Rule, evaluate_rule, names_in
 from attestrwa.record import (
     RecordError,
+    cited_files,
     context_from_inputs,
     input_problems,
+    is_case,
     pack_problems,
     record_hash,
     validate_record,
 )
 from attestrwa.registry import Registry
+from attestrwa.signing import (
+    PUBLISHED_TEST_KEYS,
+    SIGNATURE_SCHEME,
+    is_usable_public_key,
+    verify_signature,
+)
 
 PASS = "pass"  # noqa: S105 - a status label, not a credential
 FAIL = "fail"
 SKIP = "skip"
 
-GROUPS = ("Record", "Policy", "Registry", "On-chain")
+GROUPS = ("Record", "Policy", "Registry", "Documents", "Signature", "On-chain")
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,18 +80,38 @@ class Report:
             return False
         return not (self.strict and self.count(SKIP))
 
+    def _status(self, check_id: str) -> str | None:
+        for check in self.checks:
+            if check.id == check_id:
+                return check.status
+        return None
+
     @property
     def anchored(self) -> bool:
-        """True when the record was actually compared with an on-chain attestation."""
-        return any(
-            check.id == "attestation.record_hash" and check.status == PASS for check in self.checks
-        )
+        """True when the record was actually tied to its anchor.
+
+        For an escrowed deal: its hash was compared with the on-chain
+        attestation. For a case: the signature is valid *and* the signer is a
+        key the caller said they trust.
+        """
+        if self._status("attestation.record_hash") == PASS:
+            return True
+        return self._status("signature.valid") == PASS and self._status("signature.signer") == PASS
 
     @property
     def verdict(self) -> str:
         if not self.ok:
             return "NOT VERIFIED"
-        return "VERIFIED" if self.anchored else "CONSISTENT (not checked against the chain)"
+        if self.anchored:
+            if self.summary.get("signer_is_published_test_key"):
+                return "VERIFIED (signed with a published test key: consistent, not authentic)"
+            return "VERIFIED"
+        signature = self._status("signature.valid")
+        if signature == PASS:
+            return "CONSISTENT AND SIGNED (signer not checked against a trusted key)"
+        if signature == SKIP:
+            return "CONSISTENT (unsigned)"
+        return "CONSISTENT (not checked against the chain)"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -224,6 +258,198 @@ def _check_registry(
             PASS,
             f"registry {registry.registry_id}@{registry.version} hashes to "
             f"{_short(registry.sha256)}; {len(items)} membership claim(s) confirmed",
+        )
+
+
+# ---- Files and signature (format 0.2) --------------------------------------
+
+
+def _unambiguous_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """A JSON object, refused when a member name repeats: readers would disagree."""
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("duplicate member name")
+    return result
+
+
+def _not_json(constant: str) -> Any:
+    """``NaN`` and ``Infinity`` are not JSON, whatever a lenient parser accepts."""
+    raise ValueError(f"{constant} is not JSON")
+
+
+def _field_matches(output: Any, name: str, type_: str, value: Any) -> bool:
+    """Does a model output's top-level field hold exactly the recorded value?"""
+    if not isinstance(output, dict) or name not in output:
+        return False
+    actual = output[name]
+    if type_ == "int":
+        return type(actual) is int and actual == int(value)
+    if type_ == "bool":
+        return type(actual) is bool and actual == value
+    return isinstance(actual, str) and actual == value
+
+
+def _check_files(
+    body: Mapping[str, Any], documents: Sequence[tuple[str, bytes]] | None, report: Report
+) -> None:
+    """Compare supplied files with the hashes the record cites.
+
+    A supplied file that matches nothing the record cites is a failure: the
+    caller expected it to be covered, and either it was altered or it is not
+    part of this decision.
+    """
+    cited = cited_files(body)
+    group = "Documents"
+    if not cited:
+        if documents:
+            names = ", ".join(name for name, _ in documents)
+            report.add(
+                "documents.match", group, FAIL, f"{names}: this record cites no files at all"
+            )
+        return
+    with_field = [
+        item
+        for item in body["inputs"]
+        if item["source"]["kind"] == "model" and "field" in item["source"]
+    ]
+    if not documents:
+        report.add(
+            "documents.match",
+            group,
+            SKIP,
+            f"none of the {len(cited)} cited file(s) was supplied (--document, --document-dir); "
+            "not re-checked",
+        )
+        if with_field:
+            report.add(
+                "model.output",
+                group,
+                SKIP,
+                f"{len(with_field)} value(s) read from model output not re-checked",
+            )
+        return
+
+    supplied: dict[str, bytes] = {}
+    stray: list[str] = []
+    for name, content in documents:
+        digest = to_hex(sha256(content))
+        if digest in cited:
+            supplied[digest] = content
+        else:
+            stray.append(name)
+    missing = len(cited) - len(supplied)
+    absent = [label for digest, label in cited.items() if digest not in supplied]
+    if stray:
+        report.add(
+            "documents.match",
+            group,
+            FAIL,
+            f"{', '.join(stray)}: not cited by this record, or altered since it was made",
+        )
+    elif missing:
+        report.add(
+            "documents.match",
+            group,
+            SKIP,
+            f"{len(supplied)} of {len(cited)} cited file(s) supplied and matching; "
+            f"not supplied: {'; '.join(absent[:5])}{' …' if missing > 5 else ''}",
+        )
+    else:
+        report.add(
+            "documents.match",
+            group,
+            PASS,
+            f"all {len(cited)} cited file(s) supplied; every hash matches",
+        )
+
+    if not with_field:
+        return
+    problems: list[str] = []
+    unavailable = 0
+    for item in with_field:
+        source = item["source"]
+        content = supplied.get(source["output_sha256"])
+        if content is None:
+            unavailable += 1
+            continue
+        try:
+            output = json.loads(
+                content, object_pairs_hook=_unambiguous_object, parse_constant=_not_json
+            )
+        except (ValueError, RecursionError):
+            problems.append(
+                f"input {item['name']!r}: the model output is not JSON, or repeats a member name"
+            )
+            continue
+        if not _field_matches(output, source["field"], item["type"], item["value"]):
+            problems.append(
+                f"input {item['name']!r} is recorded as {item['value']!r}, which is not "
+                f"what field {source['field']!r} of the model output holds"
+            )
+    if problems:
+        report.add("model.output", group, FAIL, "; ".join(problems))
+    elif unavailable:
+        report.add(
+            "model.output",
+            group,
+            SKIP,
+            f"{unavailable} of {len(with_field)} value(s) not re-checked: "
+            "the model output was not supplied",
+        )
+    else:
+        report.add(
+            "model.output",
+            group,
+            PASS,
+            f"{len(with_field)} value(s) equal the named field of the model output",
+        )
+
+
+def _check_signature(
+    body: Mapping[str, Any],
+    computed: bytes,
+    signature: str | None,
+    trusted_key: str | None,
+    report: Report,
+) -> None:
+    group = "Signature"
+    signer = body["attester"]["public_key"]
+    report.summary["signer"] = signer
+    test_key = bytes.fromhex(signer[2:]) in PUBLISHED_TEST_KEYS
+    report.summary["signer_is_published_test_key"] = test_key
+    caveat = " (a published test key: anyone can produce this signature)" if test_key else ""
+    if signature is None:
+        report.add(
+            "signature.valid", group, SKIP, "the file carries no signature (an unsigned draft)"
+        )
+    elif verify_signature(bytes.fromhex(signer[2:]), computed, bytes.fromhex(signature[2:])):
+        report.add(
+            "signature.valid", group, PASS, f"valid Ed25519 signature by {_short(signer)}{caveat}"
+        )
+    else:
+        report.add(
+            "signature.valid",
+            group,
+            FAIL,
+            "the signature does not match this record and the key it names",
+        )
+
+    if trusted_key is None:
+        report.add(
+            "signature.signer",
+            group,
+            SKIP,
+            "no trusted key given (--public-key): the record names its own signer, "
+            "which says nothing about who holds that key",
+        )
+    elif trusted_key == signer:
+        report.add("signature.signer", group, PASS, f"signed by the key you trust{caveat}")
+    else:
+        report.add(
+            "signature.signer",
+            group,
+            FAIL,
+            f"the record names signer {_short(signer)}, you trust {_short(trusted_key)}",
         )
 
 
@@ -572,6 +798,8 @@ def verify(
     registry: Registry | None = None,
     recheck_inputs: bool = False,
     strict: bool = False,
+    documents: Sequence[tuple[str, bytes]] | None = None,
+    public_key: str | None = None,
 ) -> Report:
     """Verify a record envelope (or a bare record body).
 
@@ -579,12 +807,18 @@ def verify(
     ``eth_call(to, data, block)``;
     pass ``None`` to verify offline. ``uid`` overrides the attestation UID named
     in the envelope. With ``strict`` a skipped check counts as a failure.
+
+    For format 0.2: ``documents`` are ``(name, content)`` pairs to compare
+    with the hashes the record cites, and ``public_key`` is the Ed25519 key
+    the caller trusts to have signed a case.
     """
     report = Report(strict=strict)
+    signature_value: str | None = None
     if isinstance(doc, Mapping) and "record" in doc:
         body = doc["record"]
         claimed_hash = doc.get("record_hash")
         attestation_member = doc.get("attestation")
+        signature_member = doc.get("signature")
         envelope_uid = None
         if attestation_member is not None:
             envelope_uid = (
@@ -602,10 +836,20 @@ def verify(
             report.add("record.structure", "Record", FAIL, "record_hash: must be 32-byte hex")
             return report
     else:
-        body, claimed_hash, envelope_uid = doc, None, None
+        body, claimed_hash, envelope_uid, signature_member = doc, None, None, None
     if uid is not None and not is_hex(uid, 32):
         report.add("record.structure", "Record", FAIL, "the given UID is not 32-byte hex")
         return report
+    if public_key is not None:
+        public_key = public_key.lower() if isinstance(public_key, str) else public_key
+        if not is_hex(public_key, 32) or not is_usable_public_key(bytes.fromhex(public_key[2:])):
+            report.add(
+                "record.structure",
+                "Record",
+                FAIL,
+                "the given public key is not an Ed25519 public key (32-byte hex)",
+            )
+            return report
 
     try:
         validate_record(body)
@@ -613,7 +857,26 @@ def verify(
     except (RecordError, CanonicalError) as exc:
         report.add("record.structure", "Record", FAIL, str(exc))
         return report
-    report.add("record.structure", "Record", PASS, "valid Decision Record v0.1")
+    case = is_case(body)
+    # The signature belongs to the case profile; around an escrowed deal the
+    # member means nothing and is ignored, as any stray envelope member is.
+    if case and signature_member is not None:
+        well_formed = (
+            isinstance(signature_member, Mapping)
+            and signature_member.get("scheme") == SIGNATURE_SCHEME
+            and is_hex(signature_member.get("value"), 64)
+        )
+        if not well_formed:
+            report.add(
+                "record.structure",
+                "Record",
+                FAIL,
+                "signature: must be null or {scheme: ed25519, value: 64-byte hex}",
+            )
+            return report
+        signature_value = signature_member["value"]
+    version = body["spec"].rsplit("/", 1)[1]
+    report.add("record.structure", "Record", PASS, f"valid Decision Record v{version}")
 
     report.record_hash = to_hex(computed)
     if claimed_hash is not None and claimed_hash != report.record_hash:
@@ -627,11 +890,18 @@ def verify(
     else:
         report.add("record.hash", "Record", PASS, f"record hash {report.record_hash}")
 
+    if case:
+        report.summary.update({"case_id": body["subject"]["id"], "title": body["subject"]["title"]})
+    else:
+        report.summary.update(
+            {
+                "deal_id": body["subject"]["deal_id"],
+                "chain_id": body["subject"]["chain_id"],
+                "escrow": body["subject"]["escrow"],
+            }
+        )
     report.summary.update(
         {
-            "deal_id": body["subject"]["deal_id"],
-            "chain_id": body["subject"]["chain_id"],
-            "escrow": body["subject"]["escrow"],
             "decision": body["decision"]["outcome"],
             "policy": f"{body['policy']['pack_id']}@{body['policy']['version']}",
         }
@@ -646,12 +916,20 @@ def verify(
             "Record",
             PASS,
             f"{len(body['inputs'])} input(s); "
-            "subject and on-chain values follow from their sources",
+            + (
+                "counts of documents follow from the documents cited"
+                if case
+                else "subject and on-chain values follow from their sources"
+            ),
         )
 
     _check_replay(body, report)
     _check_policy(body, policy, report)
     _check_registry(body, registry, policy, report)
+    _check_files(body, documents, report)
+    if case:
+        _check_signature(body, computed, signature_value, public_key, report)
+        return report
 
     attestation_uid = uid or envelope_uid
     if rpc is None:

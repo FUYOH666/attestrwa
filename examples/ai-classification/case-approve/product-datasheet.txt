@@ -1,0 +1,9 @@
+PRODUCT DATA SHEET
+(synthetic example, not a real document)
+
+Model         VB-500
+Product       Vacuum insulated drinking bottle
+Capacity      500 ml
+Body          Stainless steel, inner and outer wall, vacuum between the walls
+Closure       Screw cap, polypropylene, silicone seal
+Function      Keeps drinks hot or cold; no electrical parts

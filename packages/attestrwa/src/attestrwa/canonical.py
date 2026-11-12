@@ -25,6 +25,10 @@ import re
 from typing import Any
 
 MAX_SAFE_INTEGER = 2**53 - 1
+# No valid record file is nested more than eight levels deep. Whether a parser
+# survives a hundred thousand levels depends on the interpreter, so the loader
+# draws the line itself.
+MAX_DEPTH = 32
 _KEY_RE = re.compile(r"[a-z0-9_]+")
 
 
@@ -94,11 +98,25 @@ def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _too_deep(value: Any) -> bool:
+    """Is ``value`` nested more than ``MAX_DEPTH`` levels? Iterative on purpose."""
+    stack = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, dict | list):
+            if depth > MAX_DEPTH:
+                return True
+            children = item.values() if isinstance(item, dict) else item
+            stack.extend((child, depth + 1) for child in children)
+    return False
+
+
 def loads_strict(text: str | bytes) -> Any:
-    """Parse JSON, refusing duplicate keys, floats and NaN/Infinity.
+    """Parse JSON, refusing duplicate keys, floats, NaN/Infinity and deep nesting.
 
     A lenient parser would silently keep the last duplicate key, which lets
-    two different files hash to the same record. This one fails instead.
+    two different files hash to the same record. This one fails instead. It
+    raises :class:`CanonicalError` and nothing else, on every interpreter.
     """
     if isinstance(text, bytes):
         try:
@@ -106,11 +124,22 @@ def loads_strict(text: str | bytes) -> Any:
         except UnicodeDecodeError as exc:
             raise CanonicalError(f"record is not valid UTF-8: {exc}") from exc
     try:
-        return json.loads(
+        value = json.loads(
             text,
             object_pairs_hook=_reject_duplicates,
             parse_float=_reject_float,
             parse_constant=_reject_constant,
         )
+    except CanonicalError:
+        raise
     except json.JSONDecodeError as exc:
         raise CanonicalError(f"invalid JSON: {exc}") from exc
+    except RecursionError as exc:
+        raise CanonicalError("invalid JSON: nested too deeply") from exc
+    except ValueError as exc:
+        # For example an integer literal of thousands of digits, which the
+        # interpreter refuses to convert.
+        raise CanonicalError("invalid JSON: a value cannot be represented") from exc
+    if _too_deep(value):
+        raise CanonicalError("invalid JSON: nested too deeply")
+    return value

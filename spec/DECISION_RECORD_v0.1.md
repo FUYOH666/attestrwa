@@ -1,7 +1,10 @@
 # Decision Record v0.1
 
-Status: draft, implemented by `packages/attestrwa` 2.0.0. Identifier:
+Status: draft, implemented by `packages/attestrwa` 2.0.0 and later. Identifier:
 `attestrwa.decision-record/0.1`.
+
+[Version 0.2](DECISION_RECORD_v0.2.md) adds signed records for decisions that
+have no escrow. It changes nothing here: 0.1 records stay valid as they are.
 
 A decision record states why a compliance decision about one settlement was
 made: which policy version was applied, which inputs were used and where each

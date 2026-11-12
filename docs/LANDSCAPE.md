@@ -33,7 +33,8 @@ Gating a settlement on a compliance check is not new, and several projects do it
 - It does not supply screening data beyond reading the public Chainalysis sanctions oracle.
 - It does not make an attester's decision legally sufficient. In the regimes we know of, the obligation stays with the licensed entity that uses a tool, not with the tool.
 - It does not provide custody; the escrow is a reference contract on a testnet.
+- For decisions made with an AI model (format 0.2), it does not evaluate the model, judge whether its answer was right, or log every call. It records the decisions that have to be accounted for, with the files they rested on. It also does not prove that a given model produced an output; that would need the provider's own signature.
 
 ## Who it is for
 
-Teams that already make compliance decisions about settlements and have to account for them: tokenisation platforms, stablecoin payment providers, escrow and settlement operators, and the engineers who build for them. The record format is not specific to stablecoins or to real-world assets; `subject.kind` and `anchor.kind` leave room for other decisions and other anchors.
+Teams that already make compliance decisions about settlements and have to account for them: tokenisation platforms, stablecoin payment providers, escrow and settlement operators, and the engineers who build for them. The record format is not specific to stablecoins or to real-world assets. Format 0.2 applies it to any decision that rests on documents, model outputs and a sign-off, signed with a key instead of attested on-chain; the [worked example](../examples/ai-classification) is a customs classification, for teams that let a model propose and must later show what it was shown, what it answered and who approved.

@@ -6,10 +6,18 @@ Run from the repository root:
 
 The vectors are deterministic (fixed nonce, fixed block and timestamps), so a
 second implementation of the format can be checked against them byte for byte.
+
+Format 0.1: `canonical.json`, `record-approve.json`, `record-reject.json`.
+These are frozen; a change to any of them is a change of the format.
+
+Format 0.2: `case-approve.json`, `case-reject.json`. They are the records of
+`examples/ai-classification/`, built by that example's own script and signed
+with the RFC 8032 test key, so the material they cite is in the repository.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -17,12 +25,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "packages" / "attestrwa"))
 
-from attestrwa.canonical import canonicalize  # noqa: E402
-from attestrwa.hashing import keccak256, to_hex  # noqa: E402
-from attestrwa.record import make_envelope  # noqa: E402
-from tests.conftest import UNREGISTERED_PAYEE, make_body  # noqa: E402
-from attestrwa.policy import load_policy  # noqa: E402
-from attestrwa.registry import parse_registry  # noqa: E402
+from attestrwa.canonical import canonicalize
+from attestrwa.hashing import keccak256, to_hex
+from attestrwa.policy import load_policy
+from attestrwa.record import make_envelope
+from attestrwa.registry import parse_registry
+from tests.conftest import UNREGISTERED_PAYEE, make_body
 
 OUT = ROOT / "spec" / "test-vectors"
 
@@ -80,6 +88,22 @@ def main() -> None:
             json.dumps(envelope, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
         print(f"{filename}: {envelope['record_hash']}")
+
+    example = load_example()
+    example.main()
+    for name, envelope in example.build_all().items():
+        filename = f"case-{name}.json"
+        (OUT / filename).write_text(example.dump(envelope), encoding="utf-8")
+        print(f"{filename}: {envelope['record_hash']}")
+
+
+def load_example():
+    """The example's own builder: one place decides what the 0.2 records are."""
+    path = ROOT / "examples" / "ai-classification" / "make_records.py"
+    spec = importlib.util.spec_from_file_location("ai_classification_example", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 if __name__ == "__main__":

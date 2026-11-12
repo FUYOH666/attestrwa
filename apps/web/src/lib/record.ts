@@ -74,7 +74,16 @@ export async function verifyInBrowser(envelope: Envelope, client: PublicClient):
 
   const body = envelope?.record;
   if (!body || body.spec !== SPEC_ID || !body.subject || !body.anchor || !body.decision) {
-    add("record.structure", "Record", false, "", `not a Decision Record v0.1 (${SPEC_ID})`);
+    const signed = body?.spec === "attestrwa.decision-record/0.2";
+    add(
+      "record.structure",
+      "Record",
+      false,
+      "",
+      signed
+        ? "this is a Decision Record v0.2; the browser checks v0.1 records only. Verify it with the attestrwa command."
+        : `not a Decision Record v0.1 (${SPEC_ID})`,
+    );
     return checks;
   }
   add("record.structure", "Record", true, "Decision Record v0.1", "");

@@ -55,6 +55,18 @@ Types are `bool`, `int` and `string`. Each input names one source:
 
 An `onchain` call returns one ABI word, read as `bool` or `int`.
 
+Format 0.2 adds three sources, for decisions about documents and model outputs:
+
+| `source` | Declaration | Where the value comes from | What a verifier can check |
+|---|---|---|---|
+| `document` | `reading`: `count` or `extract` | The number of documents cited by hash, or a value read out of exactly one of them. | With the files: each is byte for byte the one cited. A count equals the number of distinct documents. An extracted value is a claim about a fixed document. |
+| `model` | `field` (optional), `model` (optional) | The output of a model, cited by the hashes of the prompt and of the output. | With the files: they are the ones cited, and the value is what the named top-level field of the output holds. That a model produced the file is not checked. |
+| `human` | nothing | A named person, at a stated time. | Nothing: it is the signer's statement. |
+
+A model output read by `field` is a JSON object, and the field holds a string, `true` or `false`, or an integer. There are no floats: a confidence is written as `93`, not `0.93`.
+
+A record about a case (a decision with no escrow) may use `provider`, `declared`, `document`, `model` and `human`. It has no chain and no address, so a pack that declares a `subject`, `onchain` or `registry` input cannot be applied to it. [`examples/ai-classification/policy.yaml`](../examples/ai-classification/policy.yaml) is such a pack.
+
 The attester refuses to supply an input from any other source, and the verifier refuses a record that did. That is why a caller cannot declare `buyer_sanctioned`, and why a record cannot quietly look up a different address.
 
 ## Rule language

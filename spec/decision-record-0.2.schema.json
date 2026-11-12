@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/FUYOH666/attestrwa/blob/main/spec/decision-record-0.2.schema.json",
+  "title": "AttestRWA Decision Record v0.2 (envelope)",
+  "description": "A decision record file. Only the `record` member is hashed; the other members are conveniences for readers and carry no authority. A record is either an escrowed deal anchored by an EAS attestation or a case anchored by a signature. The schema is necessary, not sufficient: see DECISION_RECORD_v0.2.md for the rules it cannot express.",
+  "type": "object",
+  "required": ["record", "record_hash"],
+  "additionalProperties": false,
+  "properties": {
+    "record": {
+      "oneOf": [
+        { "$ref": "#/$defs/escrow_record" },
+        { "$ref": "#/$defs/case_record" }
+      ]
+    },
+    "record_hash": { "$ref": "#/$defs/bytes32" },
+    "network": { "type": ["string", "null"] },
+    "attestation": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["uid"],
+          "additionalProperties": false,
+          "properties": {
+            "uid": { "$ref": "#/$defs/bytes32" },
+            "tx_hash": { "$ref": "#/$defs/bytes32" }
+          }
+        }
+      ]
+    },
+    "signature": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["scheme", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "scheme": { "const": "ed25519" },
+            "value": { "type": "string", "pattern": "^0x[0-9a-f]{128}$" }
+          }
+        }
+      ]
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "address": { "type": "string", "pattern": "^0x[0-9a-f]{40}$" },
+    "bytes32": { "type": "string", "pattern": "^0x[0-9a-f]{64}$" },
+    "hex": { "type": "string", "pattern": "^0x([0-9a-f]{2})*$" },
+    "uint": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,77})$" },
+    "signed_decimal": { "type": "string", "pattern": "^-?(0|[1-9][0-9]{0,77})$" },
+    "identifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "non_empty": { "type": "string", "minLength": 1 },
+    "label": {
+      "description": "Short text a person reads: no control characters.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+    },
+    "line": {
+      "description": "One line of text a person reads: no control characters.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+    },
+
+    "escrow_record": {
+      "description": "An escrowed deal anchored by an EAS attestation: the 0.1 profile, with the 0.2 sources allowed.",
+      "type": "object",
+      "required": [
+        "spec", "nonce", "supersedes", "subject", "evaluation", "policy",
+        "inputs", "rules", "decision", "attester", "anchor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "spec": { "const": "attestrwa.decision-record/0.2" },
+        "nonce": { "$ref": "#/$defs/nonce" },
+        "supersedes": { "$ref": "#/$defs/supersedes" },
+        "subject": {
+          "type": "object",
+          "required": [
+            "kind", "chain_id", "escrow", "deal_id", "buyer", "payee",
+            "token", "amount", "deadline", "deposited_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "escrow_deal" },
+            "chain_id": { "$ref": "#/$defs/uint" },
+            "escrow": { "$ref": "#/$defs/address" },
+            "deal_id": { "$ref": "#/$defs/bytes32" },
+            "buyer": { "$ref": "#/$defs/address" },
+            "payee": { "$ref": "#/$defs/address" },
+            "token": { "$ref": "#/$defs/address" },
+            "amount": { "$ref": "#/$defs/decimal" },
+            "deadline": { "$ref": "#/$defs/uint" },
+            "deposited_at": { "$ref": "#/$defs/uint" }
+          }
+        },
+        "evaluation": {
+          "type": "object",
+          "required": ["block_number", "evaluated_at"],
+          "additionalProperties": false,
+          "properties": {
+            "block_number": { "$ref": "#/$defs/uint" },
+            "evaluated_at": { "$ref": "#/$defs/uint" }
+          }
+        },
+        "policy": { "$ref": "#/$defs/policy" },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/escrow_input" }
+        },
+        "rules": { "$ref": "#/$defs/rules" },
+        "decision": { "$ref": "#/$defs/decision" },
+        "attester": {
+          "type": "object",
+          "required": ["address", "software"],
+          "additionalProperties": false,
+          "properties": {
+            "address": { "$ref": "#/$defs/address" },
+            "software": { "$ref": "#/$defs/non_empty" }
+          }
+        },
+        "anchor": {
+          "type": "object",
+          "required": ["kind", "chain_id", "eas", "schema_uid"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "eas" },
+            "chain_id": { "$ref": "#/$defs/uint" },
+            "eas": { "$ref": "#/$defs/address" },
+            "schema_uid": { "$ref": "#/$defs/bytes32" }
+          }
+        }
+      }
+    },
+
+    "case_record": {
+      "description": "A decision about some material, anchored by an Ed25519 signature over the record hash.",
+      "type": "object",
+      "required": [
+        "spec", "nonce", "supersedes", "subject", "evaluation", "policy",
+        "inputs", "rules", "decision", "attester", "anchor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "spec": { "const": "attestrwa.decision-record/0.2" },
+        "nonce": { "$ref": "#/$defs/nonce" },
+        "supersedes": { "$ref": "#/$defs/supersedes" },
+        "subject": {
+          "type": "object",
+          "required": ["kind", "id", "title", "digest"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "case" },
+            "id": { "$ref": "#/$defs/label" },
+            "title": { "$ref": "#/$defs/line" },
+            "digest": { "$ref": "#/$defs/bytes32" }
+          }
+        },
+        "evaluation": {
+          "type": "object",
+          "required": ["evaluated_at"],
+          "additionalProperties": false,
+          "properties": {
+            "evaluated_at": { "$ref": "#/$defs/uint" }
+          }
+        },
+        "policy": { "$ref": "#/$defs/policy" },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/case_input" }
+        },
+        "rules": { "$ref": "#/$defs/rules" },
+        "decision": { "$ref": "#/$defs/decision" },
+        "attester": {
+          "type": "object",
+          "required": ["public_key", "software"],
+          "additionalProperties": false,
+          "properties": {
+            "public_key": { "$ref": "#/$defs/bytes32" },
+            "software": { "$ref": "#/$defs/non_empty" }
+          }
+        },
+        "anchor": {
+          "type": "object",
+          "required": ["kind", "scheme"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "signature" },
+            "scheme": { "const": "ed25519" }
+          }
+        }
+      }
+    },
+
+    "nonce": { "type": "string", "pattern": "^0x[0-9a-f]{32}$" },
+    "supersedes": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/bytes32" }] },
+
+    "policy": {
+      "type": "object",
+      "required": ["pack_id", "version", "sha256", "uri"],
+      "additionalProperties": false,
+      "properties": {
+        "pack_id": { "$ref": "#/$defs/non_empty" },
+        "version": { "$ref": "#/$defs/non_empty" },
+        "sha256": { "$ref": "#/$defs/bytes32" },
+        "uri": { "type": "string" }
+      }
+    },
+
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "expression", "result"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/non_empty" },
+          "expression": { "$ref": "#/$defs/non_empty" },
+          "result": { "type": "boolean" }
+        }
+      }
+    },
+
+    "decision": {
+      "type": "object",
+      "required": ["outcome", "code", "failed_rules"],
+      "additionalProperties": false,
+      "oneOf": [
+        { "properties": { "outcome": { "const": "approve" }, "code": { "const": 1 } } },
+        { "properties": { "outcome": { "const": "reject" }, "code": { "const": 2 } } }
+      ],
+      "properties": {
+        "outcome": { "enum": ["approve", "reject"] },
+        "code": { "enum": [1, 2] },
+        "failed_rules": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "escrow_input": {
+      "type": "object",
+      "required": ["name", "type", "value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "type": { "enum": ["bool", "int", "string"] },
+        "value": {},
+        "source": {
+          "oneOf": [
+            { "$ref": "#/$defs/source_subject" },
+            { "$ref": "#/$defs/source_onchain" },
+            { "$ref": "#/$defs/source_registry" },
+            { "$ref": "#/$defs/source_provider" },
+            { "$ref": "#/$defs/source_declared" },
+            { "$ref": "#/$defs/source_document" },
+            { "$ref": "#/$defs/source_model" },
+            { "$ref": "#/$defs/source_human" }
+          ]
+        }
+      },
+      "oneOf": [
+        { "properties": { "type": { "const": "bool" }, "value": { "type": "boolean" } } },
+        { "properties": { "type": { "const": "int" }, "value": { "$ref": "#/$defs/signed_decimal" } } },
+        { "properties": { "type": { "const": "string" }, "value": { "type": "string" } } }
+      ]
+    },
+
+    "case_input": {
+      "type": "object",
+      "required": ["name", "type", "value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "type": { "enum": ["bool", "int", "string"] },
+        "value": {},
+        "source": {
+          "oneOf": [
+            { "$ref": "#/$defs/source_provider" },
+            { "$ref": "#/$defs/source_declared" },
+            { "$ref": "#/$defs/source_document" },
+            { "$ref": "#/$defs/source_model" },
+            { "$ref": "#/$defs/source_human" }
+          ]
+        }
+      },
+      "oneOf": [
+        { "properties": { "type": { "const": "bool" }, "value": { "type": "boolean" } } },
+        { "properties": { "type": { "const": "int" }, "value": { "$ref": "#/$defs/signed_decimal" } } },
+        { "properties": { "type": { "const": "string" }, "value": { "type": "string" } } }
+      ]
+    },
+
+    "source_subject": {
+      "type": "object",
+      "required": ["kind", "field"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "subject" },
+        "field": {
+          "enum": [
+            "chain_id", "escrow", "deal_id", "buyer", "payee",
+            "token", "amount", "deadline", "deposited_at"
+          ]
+        }
+      }
+    },
+    "source_onchain": {
+      "type": "object",
+      "required": ["kind", "chain_id", "to", "call", "data", "block_number", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "onchain" },
+        "chain_id": { "$ref": "#/$defs/uint" },
+        "to": { "$ref": "#/$defs/address" },
+        "call": { "$ref": "#/$defs/non_empty" },
+        "data": { "type": "string", "pattern": "^0x([0-9a-f]{2}){4,}$" },
+        "block_number": { "$ref": "#/$defs/uint" },
+        "result": { "$ref": "#/$defs/hex" }
+      }
+    },
+    "source_registry": {
+      "type": "object",
+      "required": ["kind", "ref", "sha256", "key"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "registry" },
+        "ref": { "$ref": "#/$defs/non_empty" },
+        "sha256": { "$ref": "#/$defs/bytes32" },
+        "key": { "$ref": "#/$defs/non_empty" }
+      }
+    },
+    "source_provider": {
+      "type": "object",
+      "required": ["kind", "name", "response_sha256", "retrieved_at"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "provider" },
+        "name": { "$ref": "#/$defs/non_empty" },
+        "response_sha256": { "$ref": "#/$defs/bytes32" },
+        "retrieved_at": { "$ref": "#/$defs/uint" }
+      }
+    },
+    "source_declared": {
+      "type": "object",
+      "required": ["kind", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "declared" },
+        "by": { "$ref": "#/$defs/non_empty" }
+      }
+    },
+    "source_document": {
+      "description": "A value read from documents cited by hash: how many there are, or something extracted from exactly one.",
+      "type": "object",
+      "required": ["kind", "reading", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "document" },
+        "reading": { "enum": ["count", "extract"] },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "required": ["ref", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "ref": { "$ref": "#/$defs/line" },
+              "sha256": { "$ref": "#/$defs/bytes32" },
+              "locator": { "$ref": "#/$defs/line" }
+            }
+          }
+        }
+      },
+      "if": { "properties": { "reading": { "const": "extract" } } },
+      "then": { "properties": { "items": { "maxItems": 1 } } }
+    },
+    "source_model": {
+      "description": "A value taken from the output of a model, cited by the hashes of the prompt and of the output.",
+      "type": "object",
+      "required": ["kind", "provider", "model", "prompt_sha256", "output_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "model" },
+        "provider": { "$ref": "#/$defs/label" },
+        "model": { "$ref": "#/$defs/label" },
+        "prompt_sha256": { "$ref": "#/$defs/bytes32" },
+        "output_sha256": { "$ref": "#/$defs/bytes32" },
+        "field": { "$ref": "#/$defs/label" }
+      }
+    },
+    "source_human": {
+      "description": "A statement by a named person at a stated time.",
+      "type": "object",
+      "required": ["kind", "by", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "human" },
+        "by": { "$ref": "#/$defs/label" },
+        "at": { "$ref": "#/$defs/uint" }
+      }
+    }
+  }
+}

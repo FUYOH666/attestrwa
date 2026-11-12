@@ -1,0 +1,9 @@
+You classify goods under the Harmonized System.
+
+Read the description and the attached documents. Answer with one JSON object:
+  hs_code         the six-digit HS subheading, digits only
+  confidence_pct  an integer from 0 to 100
+  rationale       one or two sentences
+
+Goods: Insulated drinking bottle with a built-in wireless loudspeaker in the base and an LED temperature display, model SB-700.
+Documents: commercial invoice EX-INV-2026-0413.

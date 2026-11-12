@@ -1,0 +1,157 @@
+{
+  "record": {
+    "spec": "attestrwa.decision-record/0.2",
+    "nonce": "0xeb22b0e1b5eb14ee308fc2a281db5b5c",
+    "supersedes": null,
+    "subject": {
+      "kind": "case",
+      "id": "CLS-2026-000413",
+      "title": "HS classification: insulated bottle with loudspeaker SB-700",
+      "digest": "0x59bbec148b46e5241f4548efdab1f100035928432fa28972833d3b3ab3c74ba3"
+    },
+    "evaluation": {
+      "evaluated_at": 1794306600
+    },
+    "policy": {
+      "pack_id": "customs-classification-demo",
+      "version": "1.0.0",
+      "sha256": "0x17c6199e0f3da2d58a7d615e39abcca89299c0638a2b538c32040739e76d4897",
+      "uri": "examples/ai-classification/policy.yaml"
+    },
+    "inputs": [
+      {
+        "name": "hs_code",
+        "type": "string",
+        "value": "961700",
+        "source": {
+          "kind": "model",
+          "provider": "example",
+          "model": "classifier-demo-1",
+          "prompt_sha256": "0x79efe98512d949d5c9b9f1cf47df2d4d4dd08dae5a4ac34fcb963150dffd577b",
+          "output_sha256": "0xfc3d569f24684855a77c5d6ad1d16aa84bdd38d9f83e116e8e474b03fffdcb71",
+          "field": "hs_code"
+        }
+      },
+      {
+        "name": "confidence_pct",
+        "type": "int",
+        "value": "64",
+        "source": {
+          "kind": "model",
+          "provider": "example",
+          "model": "classifier-demo-1",
+          "prompt_sha256": "0x79efe98512d949d5c9b9f1cf47df2d4d4dd08dae5a4ac34fcb963150dffd577b",
+          "output_sha256": "0xfc3d569f24684855a77c5d6ad1d16aa84bdd38d9f83e116e8e474b03fffdcb71",
+          "field": "confidence_pct"
+        }
+      },
+      {
+        "name": "hs_code_check",
+        "type": "string",
+        "value": "851821",
+        "source": {
+          "kind": "model",
+          "provider": "example",
+          "model": "classifier-demo-2",
+          "prompt_sha256": "0x79efe98512d949d5c9b9f1cf47df2d4d4dd08dae5a4ac34fcb963150dffd577b",
+          "output_sha256": "0x225c2b924d01385480fc11e77dbdc61bc40306e6c502672d0c5d65332d38e4de",
+          "field": "hs_code"
+        }
+      },
+      {
+        "name": "supporting_documents",
+        "type": "int",
+        "value": "1",
+        "source": {
+          "kind": "document",
+          "reading": "count",
+          "items": [
+            {
+              "ref": "case-reject/commercial-invoice.txt",
+              "sha256": "0x394ddaa2ec66eaa859a0b7e516d578bcbe75bc111dc42e82e4605f76d6ae072f"
+            }
+          ]
+        }
+      },
+      {
+        "name": "customs_value_usd",
+        "type": "int",
+        "value": "3200",
+        "source": {
+          "kind": "document",
+          "reading": "extract",
+          "items": [
+            {
+              "ref": "case-reject/commercial-invoice.txt",
+              "sha256": "0x394ddaa2ec66eaa859a0b7e516d578bcbe75bc111dc42e82e4605f76d6ae072f",
+              "locator": "line 'Total'"
+            }
+          ]
+        }
+      },
+      {
+        "name": "reviewer_approved",
+        "type": "bool",
+        "value": false,
+        "source": {
+          "kind": "human",
+          "by": "broker:R-07 (fictional licensed customs broker)",
+          "at": 1794306000
+        }
+      }
+    ],
+    "rules": [
+      {
+        "id": "models-agree",
+        "expression": "hs_code == hs_code_check",
+        "result": false
+      },
+      {
+        "id": "model-is-confident",
+        "expression": "confidence_pct >= 90",
+        "result": false
+      },
+      {
+        "id": "two-supporting-documents",
+        "expression": "supporting_documents >= 2",
+        "result": false
+      },
+      {
+        "id": "value-within-limit",
+        "expression": "customs_value_usd <= 50000",
+        "result": true
+      },
+      {
+        "id": "reviewer-signed-off",
+        "expression": "reviewer_approved == true",
+        "result": false
+      }
+    ],
+    "decision": {
+      "outcome": "reject",
+      "code": 2,
+      "failed_rules": [
+        "models-agree",
+        "model-is-confident",
+        "two-supporting-documents",
+        "reviewer-signed-off"
+      ]
+    },
+    "attester": {
+      "public_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "software": "attestrwa-example/ai-classification"
+    },
+    "anchor": {
+      "kind": "signature",
+      "scheme": "ed25519"
+    }
+  },
+  "record_hash": "0xe09cbc725e2a87239e005b15544e74a069cb3b9cc2b630530d3cea2d5bc90462",
+  "signature": {
+    "scheme": "ed25519",
+    "value": "0x6238f8987c525d8825abfb0824cdccb3ce79c1d59a1719c207c7b3ec7037a17f373e249f7623f26dfd03999adb70f9340e113f2c336e188bfe7578ce20710c0a"
+  },
+  "links": {
+    "policy": "examples/ai-classification/policy.yaml"
+  }
+}

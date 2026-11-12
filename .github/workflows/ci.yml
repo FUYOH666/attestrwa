@@ -134,6 +134,25 @@ jobs:
               --policy-dir ../../data/policies --registry ../../data/registry/payees.json
           done
 
+      - name: Verify the signed example records with their documents
+        run: |
+          set -e
+          example=../../examples/ai-classification
+          # The public test key of RFC 8032, with which the examples are signed.
+          key=0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
+          for name in approve reject; do
+            echo "== $name"
+            uv run attestrwa verify "$example/records/$name.json" --strict \
+              --policy "$example/policy.yaml" --document-dir "$example/case-$name" \
+              --public-key "$key"
+            cmp "$example/records/$name.json" "../../spec/test-vectors/case-$name.json"
+          done
+          echo "== an altered document must fail"
+          sed 's/18,400.00/1,840.00/' "$example/case-approve/commercial-invoice.txt" > "$RUNNER_TEMP/invoice.txt"
+          if uv run attestrwa verify "$example/records/approve.json" --document "$RUNNER_TEMP/invoice.txt"; then
+            echo "an altered document was accepted" && exit 1
+          fi
+
   api:
     name: Attester (FastAPI)
     runs-on: ubuntu-latest

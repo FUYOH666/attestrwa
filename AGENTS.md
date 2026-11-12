@@ -4,14 +4,15 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, Copilot, …) working
 
 ## What this is
 
-AttestRWA is a format and a verifier for **decision records**: why a compliance decision about a stablecoin settlement was made, anchored on-chain with EAS. The repository holds the specification, the reference library and verifier, a reference escrow contract, a reference attester service and a web UI. Everything is testnet-only; nothing here is audited or deployed to mainnet.
+AttestRWA is a format and a verifier for **decision records**: why a decision was made. Format 0.1 records a compliance decision about a stablecoin settlement, anchored on-chain with EAS. Format 0.2 adds records for decisions that have no escrow (for example one made with an AI model), signed with a key instead. The repository holds the specifications, the reference library and verifier, a reference escrow contract, a reference attester service and a web UI. Everything is testnet-only; nothing here is audited or deployed to mainnet.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `spec/` | Decision Record v0.1: normative text, JSON Schema, EAS schema string, test vectors. |
-| `packages/attestrwa/` | Python library and the `attestrwa` command (canonical JSON, policy packs, records, verifier). |
+| `spec/` | Decision Record v0.1 and v0.2: normative text, JSON Schemas, EAS schema string, test vectors. |
+| `packages/attestrwa/` | Python library and the `attestrwa` command (canonical JSON, policy packs, records, signatures, verifier). |
+| `examples/ai-classification/` | Worked example of a signed 0.2 record: policy, cited documents, records, the script that builds them. Synthetic. |
 | `contracts/` | Foundry project: `SettlementEscrow.sol`, `MockUSDC.sol`, tests against the real EAS contracts. |
 | `apps/api/` | FastAPI attester: reads a deal from the escrow, builds and anchors the record. |
 | `apps/web/` | Next.js UI: `/settle` (live flow) and `/verify` (browser verifier). |
@@ -25,6 +26,10 @@ AttestRWA is a format and a verifier for **decision records**: why a compliance 
 # Library and verifier
 cd packages/attestrwa && uv sync && uv run pytest -q
 uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .
+
+# The signed example records (format 0.2); regenerate them and the vectors only on purpose
+uv run --with ./packages/attestrwa examples/ai-classification/make_records.py
+cd packages/attestrwa && uv run python ../../scripts/make-test-vectors.py
 
 # Attester
 cd apps/api && uv sync && uv run pytest -q
@@ -48,7 +53,7 @@ Unit tests must not reach the network. Only the scripts and the `e2e` workflow d
 
 ## Rules
 
-- **The record format is a contract.** A change that alters the canonical bytes of an existing record, the meaning of a member or the rule semantics needs a new spec version. `spec/test-vectors/` pins the bytes; regenerate them with `scripts/make-test-vectors.py` only when the format or the demo policy changes on purpose, and say so in the changelog.
+- **The record format is a contract.** A change that alters the canonical bytes of an existing record, the meaning of a member or the rule semantics needs a new spec version. `spec/test-vectors/` pins the bytes; regenerate them with `scripts/make-test-vectors.py` only when the format or the demo policy changes on purpose, and say so in the changelog. The 0.1 schema and vectors are frozen: `tests/test_spec.py` pins them by hash. The 0.2 vectors are the records of `examples/ai-classification/`; changing a file of that example changes them.
 - **One schema string.** `spec/eas-schema.txt` is the source; the library, the Foundry tests and the deploy script check or read it. Do not copy the string elsewhere.
 - **The decision is a pure function of policy and inputs.** Do not add decision logic to the attester. If an outcome must change, it changes in the policy or in `attestrwa.record.build_record`, and the verifier must reproduce it.
 - **The attester never takes facts about a deal from the caller.** Buyer, payee, token and amount come from the escrow. Inputs come from the source the policy declares.
@@ -57,6 +62,7 @@ Unit tests must not reach the network. Only the scripts and the `e2e` workflow d
 - **Records are untrusted input.** The verifier and `POST /verify` must report a malformed record as not verified; they must not raise.
 - Use `uv` for Python and `pnpm` for the web app. Do not vendor `contracts/lib`.
 - Do not stop or restart services the user is running. The scripts keep their own pids in `.run/` and touch only those; use `DEV_ANVIL_PORT`, `ATTESTRWA_API_PORT` and `ATTESTRWA_WEB_PORT` if the default ports are taken.
-- No secrets, private keys, absolute personal paths or internal addresses in tracked files (CI greps for them). The only key material in the repository is the publicly known Foundry development mnemonic, used for the local fork.
+- No secrets, private keys, absolute personal paths or internal addresses in tracked files (CI greps for them). The only key material in the repository is publicly known: the Foundry development mnemonic, used for the local fork, and the Ed25519 test key of RFC 8032 (section 7.1, TEST 1), used to sign the example records. Never sign anything else with either. `attestrwa sign` reads a key from a file or the environment and must never print it.
+- **A signature says who, not that it is true.** The verifier must not report a signed record as verified unless the caller named the key it trusts, and must keep reporting the published test key as such.
 - Do not claim an audit, a mainnet deployment, a partnership or regulatory acceptance in any document.
 - Keep `CHANGELOG.md` updated for user-visible changes. Documentation is in English; `README.ru.md` mirrors the README in Russian.

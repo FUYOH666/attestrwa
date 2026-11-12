@@ -46,6 +46,24 @@ An independent review of version 2 by a second model family found no way to move
 | **Lost crash window** | If the attester stops between attesting and storing the record, the attestation exists without a stored record. | The next request finds no stored record and decides again. | Write-ahead record store. |
 | **Chain history** | On-chain inputs are re-queried at their recorded block; public endpoints may stop serving old state. | The verifier reports that check as skipped. | An archive endpoint for audits. |
 
+## Signed records (format 0.2)
+
+A record about a case has no contract behind it. Its guarantees come from the signature and the hashes, and they are narrower than those of an attested deal.
+
+| What can go wrong | Effect | What the format does | What it leaves open |
+|---|---|---|---|
+| **The record is edited after signing** | A different decision, input or reviewer. | The hash changes and the signature no longer matches; the rules are replayed. | Nothing. |
+| **A cited document, prompt or model output is swapped** | The decision appears to rest on other material. | Every file is cited by SHA-256; a supplied file that the record does not cite is a failure. | A verifier who is not given the files learns nothing about them (reported as skipped). |
+| **A value is taken from the wrong place** | A confidence from another field or another model; a sign-off replaced by a flag. | The policy declares the source of every input; the record must match it. | Nothing, when the verifier holds the policy file. |
+| **Someone signs with their own key** | A forged record that verifies against the key it names. | The verifier is given the trusted key from outside the record; any other signer fails. Without a trusted key the result is "consistent and signed", never "verified". | How a key is published and bound to an organisation. |
+| **A key that nobody holds** | For the identity and the other points of small order, a signature can be written down without any private key. | Such a value is refused as a record's key and as the trusted key; only a point of prime order is accepted. | Nothing. |
+| **The signing key is stolen** | The thief can sign any record. | Nothing: a signature cannot be revoked. | Key in a KMS; a time anchor, so that records made after a key was withdrawn can be told apart. |
+| **The signer lies** | A model output that no model produced; a sign-off that never happened; a wrong date. | Each of these is an explicit statement by a named key about a fixed file, which can be disputed on its own. | Co-signatures by the reviewer; provider-signed model outputs; a time anchor. |
+| **A record is quietly replaced** | A relying party holds a record that the producer has since superseded. | `supersedes` names what a new record replaces. | Whether a later record exists cannot be read from one file; it needs the producer's register or a public log. |
+| **The published test key** | The examples are signed with a key whose private half is public. | The verifier reports such a signature as "consistent, not authentic". | Nothing. |
+
+The verifier treats a record, the files and the keys it is given as untrusted input: a malformed record, signature or key is reported as not verified and never raises.
+
 ## Static analysis
 
 Slither is run in CI and fails on any finding of medium severity or above. One detector is suppressed, with the reason in the source: `reentrancy-balance` on the balance check around the token transfer in `deposit`. Every state-changing function of the contract is `nonReentrant`, so a token callback cannot move the escrow's funds between the two balance reads.

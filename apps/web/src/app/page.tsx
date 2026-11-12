@@ -54,6 +54,11 @@ export default function Home() {
             <strong>Decision Record v0.1</strong> — the format, its JSON Schema and test vectors.
           </li>
           <li>
+            <strong>Decision Record v0.2</strong> — the same record signed with a key, for
+            decisions with no escrow: documents, AI model outputs and sign-offs cited by hash.
+            Verified with the command line.
+          </li>
+          <li>
             <strong>attestrwa verify</strong> — an independent verifier with two dependencies.
           </li>
           <li>
