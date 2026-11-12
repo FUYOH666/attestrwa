@@ -59,14 +59,14 @@ Each script ends by running the verifier in strict mode on the record it just pr
   </picture>
 </p>
 
+Then open <http://localhost:3000/settle> to run a settlement by hand, and <http://localhost:3000/verify> to check a record in the browser. Stop everything with `./scripts/stop-demo-mode.sh`. Details: [docs/LOCAL_DEMO.md](docs/LOCAL_DEMO.md).
+
 To try only the verifier, without cloning, check a published test vector offline:
 
 ```bash
 curl -sO https://raw.githubusercontent.com/FUYOH666/attestrwa/main/spec/test-vectors/record-approve.json
 uvx --from "git+https://github.com/FUYOH666/attestrwa#subdirectory=packages/attestrwa" attestrwa verify record-approve.json
 ```
-
-Then open <http://localhost:3000/settle> to run a settlement by hand, and <http://localhost:3000/verify> to check a record in the browser. Stop everything with `./scripts/stop-demo-mode.sh`. Details: [docs/LOCAL_DEMO.md](docs/LOCAL_DEMO.md).
 
 ## Features
 
