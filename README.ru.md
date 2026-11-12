@@ -59,14 +59,14 @@ git clone https://github.com/FUYOH666/attestrwa.git && cd attestrwa
   </picture>
 </p>
 
+Затем откройте <http://localhost:3000/settle>, чтобы провести расчёт вручную, и <http://localhost:3000/verify>, чтобы проверить запись в браузере. Остановить всё: `./scripts/stop-demo-mode.sh`. Подробности: [docs/LOCAL_DEMO.md](docs/LOCAL_DEMO.md).
+
 Чтобы попробовать только верификатор, не клонируя репозиторий, проверьте опубликованный тестовый вектор офлайн:
 
 ```bash
 curl -sO https://raw.githubusercontent.com/FUYOH666/attestrwa/main/spec/test-vectors/record-approve.json
 uvx --from "git+https://github.com/FUYOH666/attestrwa#subdirectory=packages/attestrwa" attestrwa verify record-approve.json
 ```
-
-Затем откройте <http://localhost:3000/settle>, чтобы провести расчёт вручную, и <http://localhost:3000/verify>, чтобы проверить запись в браузере. Остановить всё: `./scripts/stop-demo-mode.sh`. Подробности: [docs/LOCAL_DEMO.md](docs/LOCAL_DEMO.md).
 
 ## Возможности
 
