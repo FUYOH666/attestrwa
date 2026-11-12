@@ -1,187 +1,101 @@
-# Architecture — AttestRWA
+# Architecture
 
-## High-level
+AttestRWA has one product and three supporting parts.
 
-```mermaid
-flowchart TB
-  buyer["Buyer wallet (EOA)"]
-  ui["Next.js single screen<br/>rwa-settlement-live"]
-  escrow["SettlementEscrow.sol<br/>(Base Sepolia)"]
-  mockusdc["MockUSDC.sol<br/>(ERC-20)"]
-  eas["EAS Registry<br/>0x4200…0021"]
-  schemaReg["SchemaRegistry<br/>0x4200…0020"]
-  attester["Attester service<br/>FastAPI"]
-  rag["Compliance evidence engine<br/>Qdrant + BGE + reranker"]
-  feed["Developer feed<br/>data/synthetic/developers/*.json"]
-  dsl["Compliance-as-Code DSL<br/>(YAML rules)"]
-  taint["wallet_taint<br/>(Chainalysis-style mock)"]
+| Part | Path | Role |
+|---|---|---|
+| Decision Record v0.1 | [`spec/`](../spec) | The format: what a record contains, how it is hashed, how it is anchored and verified. |
+| Library and verifier | [`packages/attestrwa`](../packages/attestrwa) | Reference implementation of the format: canonical JSON, policy packs and the rule language, record construction, `attestrwa verify`. |
+| Escrow | [`contracts/`](../contracts) | Reference consumer: settles a deposit on a `SettlementDecision` attestation. |
+| Attester | [`apps/api`](../apps/api) | Reference producer: reads a deal, gathers inputs, builds the record, anchors it. |
+| Web UI | [`apps/web`](../apps/web) | A live settlement page and a browser verifier. |
 
-  buyer -->|deposit USDC| escrow
-  buyer --> ui
-  ui -->|watch events| escrow
-  escrow -->|verify| eas
-  schemaReg -.->|defines| eas
-  attester -->|signEIP712 attest| eas
-  attester --> rag
-  attester --> dsl
-  attester --> taint
-  attester -->|read| feed
-  ui -->|poll attestation| attester
-```
+The format and the verifier stand on their own. The escrow and the attester show one complete use of them.
 
-## Layers
-
-### 1. On-chain layer
-
-**Network:** Base Sepolia (chainId 84532) for development and hackathon
-submission. Production target: Base mainnet (deferred post-hackathon).
-
-**Contracts (deployed in Week 2):**
-
-| Contract | Address | Role |
-|----------|---------|------|
-| EAS | `0x4200000000000000000000000000000000000021` (canonical) | Attestation registry |
-| SchemaRegistry | `0x4200000000000000000000000000000000000020` (canonical) | Schema definitions |
-| SettlementApproval Schema | UID `0x1f64ec96216b0381dc4443b7378c57485f2217656537e8ea36f0b23af047cc96` | 10-field deal attestation |
-| SettlementEscrow.sol | `0x54D4962847bf85AB71a1Fc984510dc12D3feA1D8` (dev fork) | Holds stablecoin, releases on valid attestation |
-| MockUSDC.sol | `0xeba5CEc9257045Df0B44eA784F9a7Fa07DeeF6d4` (dev fork) | Demo ERC-20 stablecoin (mint to anyone for testing) |
-
-See [`ATTESTATION_SCHEMA.md`](ATTESTATION_SCHEMA.md) for full schema.
-
-### 2. Attester service (off-chain)
-
-**Stack:** Python 3.12 + FastAPI + uv + Pydantic.
-
-**Modules (Week 2):**
-
-| Module | Responsibility |
-|--------|----------------|
-| `attester_service.py` | Orchestrates verification + signs attestation |
-| `eas_client.py` | EAS SDK wrapper (sign EIP-712, push to EAS) |
-| `wallet_taint.py` | Wallet history classification: green / amber / red (mock Chainalysis-style signals) |
-| `compliance_dsl.py` | YAML rule parser → attestation requirements |
-| `closing_passport_demo.py` (existing) | Property Shield + capital map (legacy logic, repurposed) |
-| `developer_knowledge.py` (existing) | Upstream developer feed lookup |
-| `rag.py` (existing, renamed role) | Compliance evidence retrieval via Qdrant + BGE + reranker |
-
-**Endpoints (Week 2):**
-
-| Method | Path | Returns |
-|--------|------|---------|
-| `POST` | `/attest/settlement` | Decision + EAS attestation UID |
-| `GET` | `/attest/{dealId}` | Attestation status + evidence pack hash |
-| `GET` | `/attest/healthz` | Attester service readiness |
-
-### 3. Compliance evidence engine
-
-**Stack:** Qdrant vector DB + BGE-M3 embeddings + BGE reranker + (optional)
-LM Studio for explainability prose. Same engine that powered the legacy
-v0.5 RAG pipeline; repurposed in v1 to support attester decisions.
-
-**Corpus:** synthetic JSON + markdown under `data/synthetic/` — developer
-feeds, scenario definitions, policy documents, settlement rules.
-
-**Use:** at attestation time, the attester service retrieves the top
-relevant policy + developer-feed + scenario snippets and includes their
-hash in the EAS `evidenceHash` field. The full pack stays off-chain
-(privacy-safe), but its hash is on-chain (audit-safe).
-
-### 4. Frontend layer (Week 2)
-
-**Stack:** Next.js + TypeScript + pnpm + wagmi + viem + RainbowKit.
-
-**Pages:**
-
-| Path | Role |
-|------|------|
-| `/` (single screen) | Wallet connect → deposit → watch attester → see EAS attestation appear → escrow releases or refunds |
-| `/api/frame/attest` (Week 3) | Farcaster Frame endpoint — Frame action shows attestation status |
-
-No multi-page dashboards. The whole demo is one screen with a 90-second
-arc.
-
-### 5. Dev / production deployment
+## Flow
 
 ```mermaid
-flowchart LR
-  subgraph local [Local dev (Week 1-2)]
-    anvil["Anvil fork of Base Sepolia"]
-    devApi["FastAPI :8080"]
-    devWeb["Next.js :3000"]
-  end
+sequenceDiagram
+    autonumber
+    participant B as Buyer
+    participant E as SettlementEscrow
+    participant I as Integrator
+    participant A as Attester
+    participant S as Sources
+    participant EAS as EAS
+    participant V as Verifier
 
-  subgraph testnet [Real Base Sepolia (Week 3)]
-    base["Base Sepolia mainnet RPC"]
-    prodApi["FastAPI on Render / Railway"]
-    prodWeb["Next.js on Vercel"]
-    dune["Dune dashboard"]
-    farc["Farcaster Frame"]
-  end
-
-  anvil -.->|switch by env var| base
-  devApi -.->|deploy| prodApi
-  devWeb -.->|deploy| prodWeb
-  prodWeb --> farc
-  base --> dune
+    B->>E: deposit(salt, payee, token, amount, deadline)
+    Note over E: dealId = keccak(chainId, escrow, buyer, salt)
+    I->>A: POST /attest/settlement {chain, escrow, dealId, declared}
+    A->>E: getDeal(dealId) at block N
+    A->>S: each input from the source the policy declares, at block N
+    Note over A: build_record(policy, inputs) -> decision
+    A->>EAS: attest(dealId, payee, token, amount, decision, policyHash, recordHash)
+    A-->>I: record + attestation UID
+    alt decision is APPROVE
+        I->>E: release(dealId, uid)
+        E->>EAS: getAttestation(uid)
+        E-->>B: payee receives the funds
+    else decision is REJECT
+        B->>E: refund(dealId, uid)
+        E-->>B: buyer receives the deposit back
+    end
+    V->>EAS: getAttestation(uid)
+    V->>E: getDeal(dealId)
+    Note over V: recompute hash, compare, replay rules
 ```
 
-Switching dev → real testnet is a single environment-variable flip
-(`DEV_RPC_URL=http://127.0.0.1:8545` → `https://sepolia.base.org`), plus
-one optional 60-second faucet step. See [`DEV_SIMULATION.md`](DEV_SIMULATION.md)
-for the runbook.
+## Design decisions
 
-## Data flow — happy path (deal_id 0xABCD)
+**The decision is a pure function of the policy and the inputs.** `attestrwa.record.build_record` evaluates every rule and approves if and only if all hold. The attester contains no decision logic of its own. This is what makes replay meaningful: a verifier that re-runs the rules over the recorded inputs reaches the decision the attester reached, or the record is wrong.
 
-1. **Buyer wallet** approves Mock USDC transfer to `SettlementEscrow`.
-2. **Buyer wallet** calls `escrow.deposit(dealId, payeeAddress, amount,
-   tokenAddress)`.
-3. **Escrow contract** holds funds; emits `Deposited(dealId, ...)` event.
-4. **Attester service** observes the event (or receives explicit
-   `POST /attest/settlement` request).
-5. **Attester service** runs verification:
-   a. Look up `dealId` → property + payeeAddress.
-   b. Query developer feed: is `payeeAddress` in
-      `developer.authorizedPayees[]`? → `payeeVerified = true|false`.
-   c. Run wallet_taint on buyer EOA → `capitalClass = green | amber | red`.
-   d. Run compliance DSL rules → `decision = approve | reject | escalate`.
-   e. Retrieve RAG evidence → compute `evidenceHash = keccak256(pack)`.
-6. **Attester service** signs EAS attestation off-chain (EIP-712), then
-   calls `eas.attest(schemaUid, {recipient, data, ...})`.
-7. **Escrow contract** picks up the attestation UID (via `release()` call
-   from buyer or attester) and verifies:
-   a. `attestation.schema == SettlementApproval`
-   b. `attestation.revocationTime == 0`
-   c. `attestation.expirationTime > block.timestamp`
-   d. `attDealId == localDealId`
-   e. `attester in trustedAttesters`
-   f. `payeeVerified == true`
-   g. `capitalClass < 2` (green or amber)
-8. **Escrow contract** transfers USDC to `payeeAddress`; emits
-   `SettlementReleased(dealId, payeeAddress, amount, attestationUid)`.
-9. **Frontend** observes the release event; shows BaseScan link + EAS Scan
-   link + Closing Passport hash.
+**Sources are declared by the policy and recorded with each value.** A policy pack states, for every input, its type, the kind of source and the source itself: which subject field, which contract call about which party, which registry. The attester fetches exactly that; the verifier checks the record against the declaration. Two failures are closed by this: a value the policy expects from the chain arriving as a caller's claim, and the right rules being applied to the wrong facts.
 
-## Reject path
+**The attester reads the deal; the caller names it.** A request carries a chain id, an escrow address and a deal id. Buyer, payee, token and amount are read from the escrow at one block. The attester serves one configured escrow and refuses requests about any other, so it cannot be pointed at a contract that returns invented deals.
 
-Same as steps 1–5; at step 5d the decision is `reject`. The attester signs
-a **revocable** attestation with `payeeVerified = false` (or `capitalClass
-= red`). At step 7, `release()` fails the requirement check. Funds remain
-escrowed; after `expiresAt`, the buyer calls `escrow.refund(dealId)` and
-gets their USDC back. All branches logged on-chain.
+**One snapshot.** Every on-chain input is read at `evaluation.block_number`, and `evaluation.evaluated_at` is that block's timestamp. A record cannot combine readings from different moments.
 
-## Key design decisions
+**One live decision per deal.** A repeat request returns the stored record. A new decision is made only after the earlier attestation has been revoked on-chain; the new record names it in `supersedes` and the new attestation references it in `refUID`. Without this, an approval and a rejection could both be live and the outcome would depend on who transacts first.
 
-- **Forked dev chain, not mocked EAS.** Anvil forks Base Sepolia, so the
-  EAS protocol bytecode at `0x4200…0021` is the real production code. We
-  do not mock the attestation protocol, which would risk semantic drift.
-- **Mock USDC, not real testnet USDC.** Demo determinism > realism for a
-  3-minute jury demo. We can mint any amount on demand. Production deploy
-  would point to real USDC.
-- **Revocable attestations.** If an attester signs by mistake (or is
-  compromised), they can revoke; escrow re-checks `revocationTime == 0`
-  before release.
-- **Public attester address.** Anyone can verify attestations on EAS Scan
-  without our cooperation. This is intentional (composable trust).
-- **Off-chain evidence pack, on-chain hash.** Privacy-safe; auditable.
-- **No upgradeable contracts.** Escrow is immutable. Schema is immutable
-  by EAS design. Migration = new contract, new schema, deprecation period.
+**Hashes on-chain, the record off-chain.** The attestation carries the outcome, the policy hash and the record hash. The escrow needs nothing more, and the reasons need not be public.
+
+**The escrow interprets as little as possible.** It checks that an attestation is a live decision by a trusted attester, addressed to it, made after the deposit, about exactly this deal, with the expected outcome. Policy semantics never enter the contract, so a policy change needs no contract change.
+
+**State reads only.** The verifier uses `eth_call` and `eth_chainId` (plus one block header lookup, reported as skipped when unavailable). Public RPC endpoints prune old receipts and logs; contract state stays readable.
+
+**Fail closed.** If a source cannot be read, the attester makes no decision and answers with an error. A failed transaction is an error, not a decision.
+
+## Components
+
+### Library (`packages/attestrwa`)
+
+| Module | Contents |
+|---|---|
+| `canonical` | Strict RFC 8785 subset; a JSON loader that refuses duplicate keys and floats. |
+| `policy` | Policy packs, the lexer and parser of the rule language, the typed interpreter. |
+| `record` | Record validation, construction, hashing; checks of inputs against sources and against the policy. |
+| `eas` | The `SettlementDecision` schema, its UID, encoding and decoding. |
+| `rpc` | A minimal JSON-RPC client and decoders for the EAS and escrow views. |
+| `registry` | Payee registry files. |
+| `verify`, `cli` | The verifier and its command line. |
+
+Runtime dependencies: PyYAML and PyCryptodome.
+
+### Escrow (`contracts/src/SettlementEscrow.sol`)
+
+See [ATTESTATION_SCHEMA.md](ATTESTATION_SCHEMA.md) for what the contract checks, and [THREAT_MODEL.md](THREAT_MODEL.md) for what it guarantees.
+
+### Attester (`apps/api`)
+
+| Module | Contents |
+|---|---|
+| `service` | Orchestration: idempotency, reading the deal, building and anchoring the record. |
+| `providers` | One resolver per source kind, driven by the policy's declarations. |
+| `chain` | The write path: `EAS.attest` with a pending nonce under a lock. |
+| `store` | Immutable record files, by hash and by deal. |
+| `main`, `auth`, `schemas` | HTTP surface; see [API.md](API.md). |
+
+### Web (`apps/web`)
+
+`/settle` drives the real flow. On the local fork it signs with the public development account, so no wallet is needed; on another network it uses the browser wallet. The attester's API key stays in a server route. `/verify` runs in the browser alone.

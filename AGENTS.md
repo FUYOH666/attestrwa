@@ -1,113 +1,62 @@
-# AGENTS.md — AttestRWA
+# AGENTS.md
 
-Settlement Attestation Layer for RWA. Web3-native on-chain compliance bridge
-for cross-border stablecoin real-world-asset settlements. Hackathon target:
-SEA Blockchain Week 2026.
+Guidance for AI coding agents (Claude Code, Codex, Cursor, Copilot, …) working in this repository. Humans: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-**Branch:** `main` (merged from `v1/attestation-layer` at `v1.0.0`).
-**Version:** `1.0.0` (SEA Blockchain Week 2026 hackathon submission).
-**Build time:** ~4 hours AI-assisted development after pivot from v0.5 prototype.
-**Predecessor:** Bankable Property Network (archive/v0.5/).
+## What this is
 
-## Stack
+AttestRWA is a format and a verifier for **decision records**: why a compliance decision about a stablecoin settlement was made, anchored on-chain with EAS. The repository holds the specification, the reference library and verifier, a reference escrow contract, a reference attester service and a web UI. Everything is testnet-only; nothing here is audited or deployed to mainnet.
 
-| Layer | Tool |
-|-------|------|
-| Contracts | Solidity 0.8.x, **Foundry** (forge / cast / anvil / chisel 1.7.1) |
-| L2 | **Base Sepolia** (chainId 84532); local fork via Anvil for development |
-| Attestations | **EAS** at canonical `0x4200…0021` (SchemaRegistry `0x4200…0020`) |
-| Stablecoin | Mock USDC ERC-20 (own deployment, week 2) |
-| Wallet | wagmi + viem + RainbowKit (week 2) |
-| API | Python 3.12+, **uv**, FastAPI |
-| Frontend | Next.js, TypeScript, pnpm |
-| RAG (compliance evidence) | Qdrant + BGE-M3 embedding + BGE reranker |
-| LLM (explainability only) | LM Studio (Qwen-class), schema-bound, never autonomous |
-| Analytics | Dune Analytics public dashboard (week 3) |
-| Distribution | Farcaster Frame (week 3) |
+## Layout
+
+| Path | What |
+|---|---|
+| `spec/` | Decision Record v0.1: normative text, JSON Schema, EAS schema string, test vectors. |
+| `packages/attestrwa/` | Python library and the `attestrwa` command (canonical JSON, policy packs, records, verifier). |
+| `contracts/` | Foundry project: `SettlementEscrow.sol`, `MockUSDC.sol`, tests against the real EAS contracts. |
+| `apps/api/` | FastAPI attester: reads a deal from the escrow, builds and anchors the record. |
+| `apps/web/` | Next.js UI: `/settle` (live flow) and `/verify` (browser verifier). |
+| `data/policies/`, `data/registry/` | Demo policy packs and the demo payee registry (synthetic). |
+| `scripts/` | Local fork, deployment, end-to-end paths, public testnet publishing. |
+| `docs/` | Architecture, API, threat model, policy packs, landscape, roadmap. |
 
 ## Commands
 
 ```bash
-# Dev chain (Anvil fork of Base Sepolia + EAS schema registered)
-./scripts/dev-chain.sh        # one-shot setup, idempotent
-./scripts/stop-dev-chain.sh   # tear down
+# Library and verifier
+cd packages/attestrwa && uv sync && uv run pytest -q
+uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .
 
-# API
+# Attester
 cd apps/api && uv sync && uv run pytest -q
-cd apps/api && uv run uvicorn app.main:app --app-dir src --host 0.0.0.0 --port 8080
+
+# Contracts (dependencies are pinned by the script, not vendored)
+./scripts/install-contract-deps.sh
+cd contracts && forge fmt --check && forge test
 
 # Web
-cd apps/web && pnpm install && pnpm dev
-cd apps/web && pnpm run build
+cd apps/web && pnpm install --frozen-lockfile && pnpm test && pnpm run typecheck && pnpm run build
 
-# Contracts (Foundry workspace, Week 2 fills these in)
-cd contracts && forge build && forge test -vvv --gas-report
-cd contracts && slither .   # zero high/medium target
-
-# Health
-curl http://localhost:8080/healthz
+# End to end on a local fork of Base Sepolia
+./scripts/dev-chain.sh && ./scripts/deploy-contracts.sh
+./scripts/e2e_rwa_flow.sh && ./scripts/e2e_rwa_reject.sh
+./scripts/stop-demo-mode.sh
 ```
 
-## Demo flow (target Week 2)
+CI (`.github/workflows/ci.yml`) runs a secret and personal-path scan, the contract tests and Slither, both Python suites with ruff, and the web build. The end-to-end paths run in `.github/workflows/e2e.yml` on demand and weekly, because they need the public RPC.
 
-Single screen (`/`), wallet connect, 90-second arc:
+Unit tests must not reach the network. Only the scripts and the `e2e` workflow do.
 
-1. Buyer wallet sends Mock USDC to `SettlementEscrow` on Base Sepolia (dev fork in week 1, real testnet in week 3).
-2. Attester service detects pending settlement, runs Property Shield + RAG compliance, signs EAS attestation.
-3. Branch A (HAPPY) — attestation valid → escrow releases USDC to verified payee.
-4. Branch B (REJECT) — payee mismatch / red capital / expired attestation → escrow refunds buyer.
+## Rules
 
-## Key endpoints (current — Week 1)
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/healthz` | Liveness |
-| GET | `/api/demo/closing-passport` | Legacy settlement flow data (basis for attester logic) |
-| GET | `/api/demo/developer-knowledge-hub` | Upstream developer feed (drives payee verification) |
-| GET | `/api/demo/supplier-contrast` | Off-platform vs tier-1 supplier data |
-| GET | `/api/demo/evidence-pack` | Evidence pack export (privacy-safe) |
-| GET | `/api/scenarios` | Scenario list (to be replaced with 3 RWA scenarios in week 1.4) |
-| GET | `/api/scenarios/{id}/run` | Run scenario |
-| GET | `/api/scenarios/{id}/rag-run` | Run scenario with RAG trace |
-| GET | `/api/rag/health` | RAG / compliance evidence engine health |
-| POST | `/api/rag/ingest` | Ingest synthetic corpus into Qdrant |
-
-Week 2 adds: `POST /attest/settlement`, `GET /attest/{dealId}`, `GET /attest/healthz`.
-
-## Conventions
-
-- Python: **uv only** (no pip), `logging` not `print`, `/healthz` required.
-- Use `app.paths.synthetic_root()` + `app.services.data_loader.load_json`; never duplicate `Path(__file__).parents[N]`.
-- Secrets in `.env`; dev attester key in `.env.example` is the well-known Anvil test key (public, never use on mainnet).
-- After substantive changes: run `uv run pytest -q` (apps/api), `pnpm run build` (apps/web), and `forge test` (contracts, when present).
-
-## Do not
-
-- Commit secrets, real attester private keys, TailScale IPs, or internal hostnames.
-- Edit files under `.cursor/plans/`.
-- Use `pip install` without `uv`.
-- Reintroduce buyer-consult / WhatsApp / Yield panels (they live in `archive/v0.5/` as historical context).
-- Claim production WhatsApp / Telegram / Line / Meta Business API integration.
-- Claim mainnet deploy or real RWA-platform partnerships (testnet only for hackathon).
-
-## Pivot context (read before large changes)
-
-- Read [`docs/DEV_SIMULATION.md`](docs/DEV_SIMULATION.md) — how to spin up the local dev chain.
-- Read [`docs/ATTESTATION_SCHEMA.md`](docs/ATTESTATION_SCHEMA.md) — EAS schema and integration model.
-- Read [`docs/PRODUCT_THESIS.md`](docs/PRODUCT_THESIS.md) — problem, solution, primary customers.
-- Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — layers, data flow, design decisions.
-- Read [`docs/ROADMAP.md`](docs/ROADMAP.md) — Week 0 → Week 3 → 2027.
-- Read [`archive/v0.5/docs/WEEK0_BOOTSTRAP.md`](archive/v0.5/docs/WEEK0_BOOTSTRAP.md) — what was locked in Week 0 (historical).
-- Read `.cursor/plans/godmode-pivot-attestation-layer_*.plan.md` — full plan.
-
-## New chat starter
-
-```text
-Project: AttestRWA — Settlement Attestation Layer for RWA. Branch
-v1/attestation-layer from main@v0.5.13. Read AGENTS.md, docs/PRODUCT_
-THESIS.md, docs/ARCHITECTURE.md, docs/DEV_SIMULATION.md, docs/
-ATTESTATION_SCHEMA.md first.
-Network: Base Sepolia (chainId 84532), dev via Anvil fork on :8545.
-Stack: contracts (Foundry, Week 2), apps/api (FastAPI, uv), apps/web
-(Next.js, pnpm). Legacy v0.5 in archive/v0.5/. Do not edit .cursor/plans/.
-```
+- **The record format is a contract.** A change that alters the canonical bytes of an existing record, the meaning of a member or the rule semantics needs a new spec version. `spec/test-vectors/` pins the bytes; regenerate them with `scripts/make-test-vectors.py` only when the format or the demo policy changes on purpose, and say so in the changelog.
+- **One schema string.** `spec/eas-schema.txt` is the source; the library, the Foundry tests and the deploy script check or read it. Do not copy the string elsewhere.
+- **The decision is a pure function of policy and inputs.** Do not add decision logic to the attester. If an outcome must change, it changes in the policy or in `attestrwa.record.build_record`, and the verifier must reproduce it.
+- **The attester never takes facts about a deal from the caller.** Buyer, payee, token and amount come from the escrow. Inputs come from the source the policy declares.
+- **Fail closed.** An unreadable source or a failed transaction is an error, never a default value or a decision.
+- **The escrow moves funds only to the deal's payee or its buyer.** Any contract change must keep the invariants in `contracts/test/SettlementEscrow.invariants.t.sol` and Slither clean at medium and above.
+- **Records are untrusted input.** The verifier and `POST /verify` must report a malformed record as not verified; they must not raise.
+- Use `uv` for Python and `pnpm` for the web app. Do not vendor `contracts/lib`.
+- Do not stop or restart services the user is running. The scripts keep their own pids in `.run/` and touch only those; use `DEV_ANVIL_PORT`, `ATTESTRWA_API_PORT` and `ATTESTRWA_WEB_PORT` if the default ports are taken.
+- No secrets, private keys, absolute personal paths or internal addresses in tracked files (CI greps for them). The only key material in the repository is the publicly known Foundry development mnemonic, used for the local fork.
+- Do not claim an audit, a mainnet deployment, a partnership or regulatory acceptance in any document.
+- Keep `CHANGELOG.md` updated for user-visible changes. Documentation is in English; `README.ru.md` mirrors the README in Russian.

@@ -19,6 +19,7 @@ export default function VerifyPage() {
   const [reference, setReference] = useState<Reference | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [autoRun, setAutoRun] = useState(false);
 
   useEffect(() => {
     loadConfig().then(setConfig);
@@ -31,7 +32,28 @@ export default function VerifyPage() {
       setText(JSON.stringify(JSON.parse(handedOver), null, 2));
       sessionStorage.removeItem("attestrwa.record");
     }
+    // /verify?example=<file>&auto=1 opens a published record and checks it at once.
+    const params = new URLSearchParams(window.location.search);
+    const example = params.get("example");
+    if (example && /^[A-Za-z0-9._-]+\.json$/.test(example)) {
+      fetch(`/data/records/${example}`)
+        .then((response) => (response.ok ? response.text() : ""))
+        .then((body) => {
+          if (!body) return;
+          setText(body);
+          if (params.get("auto") === "1") setAutoRun(true);
+        })
+        .catch(() => undefined);
+    }
   }, []);
+
+  useEffect(() => {
+    if (autoRun && config && text) {
+      setAutoRun(false);
+      void verify();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, config, text]);
 
   async function loadExample(example: Example) {
     const response = await fetch(`/data/records/${example.file}`);

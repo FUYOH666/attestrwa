@@ -14,10 +14,12 @@ body:
       label: Area
       description: Which part of the codebase is affected?
       options:
-        - Contracts (SettlementEscrow / MockUSDC / EAS integration)
-        - Backend (FastAPI attester / RAG / DSL)
-        - Frontend (Next.js / wallet UI / Farcaster Frame)
-        - Scripts (dev-chain / deploy / e2e)
+        - Record format or specification
+        - Library and verifier (packages/attestrwa)
+        - Contracts (SettlementEscrow)
+        - Attester (apps/api)
+        - Web UI (apps/web)
+        - Scripts (local fork, deploy, end to end)
         - Docs
         - CI / GitHub config
         - Other
