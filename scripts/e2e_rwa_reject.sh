@@ -1,160 +1,108 @@
 #!/usr/bin/env bash
-# End-to-end RWA settlement REJECT path against the local dev chain.
+# End-to-end REJECT path on the local fork, including the attacks the v1
+# design allowed:
 #
-# Same orchestration as scripts/e2e_rwa_flow.sh, but the buyer instructs the
-# escrow to release to the impostor `SRL Holding 2026` wallet that is not
-# in the developer feed. The attester signs an EAS attestation with
-# `payeeVerified=false`, the escrow refuses release, and the buyer is
-# refunded via the attester-signed-reject path.
+#   deposit for an unregistered payee
+#   -> the caller tries to describe the deal or declare screening results (refused)
+#   -> the buyer tries to refund early without a decision (reverts)
+#   -> attester rejects -> record verified -> release reverts -> buyer refunds
+#
+# Needs ./scripts/dev-chain.sh and ./scripts/deploy-contracts.sh first.
 
 set -euo pipefail
+SCRIPT_TAG=e2e-reject
+# shellcheck source=scripts/lib/common.sh
+source "$(dirname "$0")/lib/common.sh"
 
-# shellcheck disable=SC2155
-export PATH="$HOME/.foundry/bin:$PATH"
+require_tools cast curl python3 uv
+ensure_api_up
 
-STATE_FILE="${ATTESTRWA_STATE_FILE:-.dev-chain.state}"
-API_HOST=127.0.0.1
-API_PORT=${ATTESTRWA_API_PORT:-8080}
+RPC="$DEV_RPC_URL"
+ESCROW="$SETTLEMENT_ESCROW_ADDRESS"
+TOKEN="$SETTLEMENT_TOKEN_ADDRESS"
+BUYER="$(dev_address "$ROLE_BUYER")"
+BUYER_KEY="$(dev_key "$ROLE_BUYER")"
+IMPOSTOR="$(dev_address "$ROLE_IMPOSTOR")"
+AMOUNT=580000000
+SALT="$(cast keccak "reject-$(date +%s)-$RANDOM")"
+DEADLINE=$(( $(cast block latest --field timestamp --rpc-url "$RPC") + 86400 ))
 
-BUYER_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-BUYER_PK=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
-
-# Anvil acc 3 — impostor payee claiming "SRL Holding 2026 Co., Ltd."
-IMPOSTOR_PAYEE=0x90F79bf6EB2c4f870365E785982E1f101E93b906
-
-AMOUNT_BASE_UNITS=280000000 # 280 USDC
-
-log() { printf '\n\033[1;36m[reject]\033[0m %s\n' "$*" >&2; }
-ok()  { printf '\033[1;32m[ok]\033[0m  %s\n' "$*" >&2; }
-err() { printf '\033[1;31m[err]\033[0m %s\n' "$*" >&2; }
-
-require_state() {
-  [ -f "$STATE_FILE" ] || { err "$STATE_FILE missing — run ./scripts/dev-chain.sh"; exit 1; }
-  # shellcheck disable=SC1090
-  source "$STATE_FILE"
-  : "${MOCK_USDC_ADDRESS:?run ./scripts/deploy-contracts.sh first}"
-  : "${SETTLEMENT_ESCROW_ADDRESS:?run ./scripts/deploy-contracts.sh first}"
+send() { cast send "$@" --rpc-url "$RPC" >/dev/null; }
+must_revert() {
+  local label="$1"; shift
+  if cast send "$@" --rpc-url "$RPC" >/dev/null 2>&1; then
+    fail "$label succeeded but must revert"
+  fi
+  ok "$label reverted"
+}
+balance_of() { cast call "$TOKEN" "balanceOf(address)(uint256)" "$1" --rpc-url "$RPC" | awk '{print $1}'; }
+post_status() {
+  curl -s -o /dev/null -w '%{http_code}' -X POST "http://${API_HOST}:${API_PORT}/attest/settlement" \
+    -H 'Content-Type: application/json' -H "X-API-Key: $2" -d "$1"
 }
 
-require_api() {
-  if ! curl -fsS "http://${API_HOST}:${API_PORT}/healthz" >/dev/null 2>&1; then
-    err "FastAPI not up on :${API_PORT} — run scripts/e2e_rwa_flow.sh first (it starts the API), or start uvicorn manually."
-    exit 1
-  fi
+log "1/6 buyer deposits $AMOUNT naming a payee that is not in the registry"
+send "$TOKEN" "mint(address,uint256)" "$BUYER" "$AMOUNT" --private-key "$BUYER_KEY"
+send "$TOKEN" "approve(address,uint256)" "$ESCROW" "$AMOUNT" --private-key "$BUYER_KEY"
+BEFORE="$(balance_of "$BUYER")"
+send "$ESCROW" "deposit(bytes32,address,address,uint256,uint64)" \
+  "$SALT" "$IMPOSTOR" "$TOKEN" "$AMOUNT" "$DEADLINE" --private-key "$BUYER_KEY"
+DEAL_ID="$(cast call "$ESCROW" "computeDealId(address,bytes32)(bytes32)" "$BUYER" "$SALT" --rpc-url "$RPC")"
+ok "deal $DEAL_ID"
+
+DEAL_JSON="\"chain_id\": $DEV_CHAIN_ID, \"escrow\": \"$ESCROW\", \"deal_id\": \"$DEAL_ID\""
+HONEST_BODY="{$DEAL_JSON, \"declared\": {\"jurisdiction\": \"TH\"}}"
+PAYEE_BODY="{$DEAL_JSON, \"payee_wallet\": \"$(dev_address "$ROLE_PAYEE")\", \"declared\": {\"jurisdiction\": \"TH\"}}"
+DECLARED_BODY="{$DEAL_JSON, \"declared\": {\"jurisdiction\": \"TH\", \"payee_registered\": true}}"
+
+expect_status() {
+  local label="$1" expected="$2" body="$3" key="${4:-$DEV_API_KEY}" status
+  status="$(post_status "$body" "$key")"
+  [ "$status" = "$expected" ] || fail "$label: expected HTTP $expected, got $status"
+  ok "$label -> $expected"
 }
 
-run() {
-  require_state
-  require_api
+log "2/6 the attester refuses requests that try to steer it"
+expect_status "request without a valid API key" 401 "$HONEST_BODY" wrong-key
+expect_status "caller-supplied payee" 422 "$PAYEE_BODY"
+expect_status "declared registry result" 422 "$DECLARED_BODY"
 
-  local salt="$(date +%s%N)"
-  local DEAL_ID="0x$(printf 'attestrwa-reject-%s' "$salt" | shasum -a 256 | awk '{print $1}')"
-  local DEADLINE=$(( $(date +%s) + 86400 ))
+log "3/6 without a decision the buyer cannot take the deposit back before the deadline"
+must_revert "early refund without a decision" "$ESCROW" "refund(bytes32,bytes32)" "$DEAL_ID" \
+  0x0000000000000000000000000000000000000000000000000000000000000000 --private-key "$BUYER_KEY"
 
-  log "Reject scenario: buyer instructs escrow to release to impostor 'SRL Holding 2026'"
-  log "Deal id: $DEAL_ID"
+log "4/6 the attester decides from what the escrow, the registry and the oracle say"
+RESPONSE="$(curl -fsS -X POST "http://${API_HOST}:${API_PORT}/attest/settlement" \
+  -H 'Content-Type: application/json' -H "X-API-Key: ${DEV_API_KEY}" \
+  -d "$HONEST_BODY")"
+DECISION="$(printf '%s' "$RESPONSE" | json_field "['decision']")"
+FAILED="$(printf '%s' "$RESPONSE" | json_field "['failed_rules']")"
+UID_="$(printf '%s' "$RESPONSE" | json_field "['attestation_uid']")"
+[ "$DECISION" = "reject" ] || fail "expected reject, got $DECISION"
+ok "decision REJECT, failed rules $FAILED, attestation $UID_"
 
-  log "1) Mint $AMOUNT_BASE_UNITS mUSDC to buyer"
-  cast send "$MOCK_USDC_ADDRESS" "mint(address,uint256)" \
-      "$BUYER_ADDRESS" "$AMOUNT_BASE_UNITS" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$ATTESTER_PRIVATE_KEY" >/dev/null
-  ok "minted"
+log "5/6 the rejection is as verifiable as an approval"
+mkdir -p "$RUN_DIR"
+RECORD="$RUN_DIR/last-reject.json"
+curl -fsS "http://${API_HOST}:${API_PORT}/records/${DEAL_ID}" >"$RECORD"
+verify_record "$RECORD" --rpc "$RPC" --policy "$POLICY_FILE" --registry "$REGISTRY_FILE" \
+  --recheck-inputs --strict
+ok "record verified (strict)"
 
-  log "2) Buyer approves escrow"
-  cast send "$MOCK_USDC_ADDRESS" "approve(address,uint256)" \
-      "$SETTLEMENT_ESCROW_ADDRESS" "$AMOUNT_BASE_UNITS" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$BUYER_PK" >/dev/null
-  ok "approve"
+log "6/6 the rejection cannot release the funds, and lets the buyer refund"
+must_revert "release on a REJECT decision" "$ESCROW" "release(bytes32,bytes32)" "$DEAL_ID" "$UID_" \
+  --private-key "$BUYER_KEY"
+send "$ESCROW" "refund(bytes32,bytes32)" "$DEAL_ID" "$UID_" --private-key "$BUYER_KEY"
+AFTER="$(balance_of "$BUYER")"
+[ "$AFTER" = "$BEFORE" ] || fail "buyer balance is $AFTER, expected $BEFORE"
+[ "$(balance_of "$IMPOSTOR")" = "0" ] || fail "the unregistered payee received funds"
+ok "buyer refunded in full; the unregistered payee received nothing"
 
-  log "3) Buyer deposits to escrow with impostor payee"
-  cast send "$SETTLEMENT_ESCROW_ADDRESS" \
-      "deposit(bytes32,address,address,uint256,uint64)" \
-      "$DEAL_ID" "$IMPOSTOR_PAYEE" "$MOCK_USDC_ADDRESS" "$AMOUNT_BASE_UNITS" "$DEADLINE" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$BUYER_PK" >/dev/null
-  ok "deposit"
+cat >&2 <<SUMMARY
 
-  log "4) Attester decision should be REJECT"
-  local body
-  body=$(cat <<EOF
-{
-  "deal_id": "$DEAL_ID",
-  "buyer_wallet": "$BUYER_ADDRESS",
-  "payee_wallet": "$IMPOSTOR_PAYEE",
-  "token_address": "$MOCK_USDC_ADDRESS",
-  "amount_base_units": $AMOUNT_BASE_UNITS,
-  "developer_id": "siam-riverside-living",
-  "jurisdiction": "TH",
-  "buyer_kyc_tier": 3,
-  "expires_in_seconds": 86400
-}
-EOF
-)
-  local attest_resp
-  attest_resp=$(curl -fsS -X POST \
-      "http://${API_HOST}:${API_PORT}/attest/settlement" \
-      -H 'Content-Type: application/json' \
-      -d "$body")
-  echo "$attest_resp" | python3 -m json.tool >&2
-
-  local decision uid txhash
-  decision=$(echo "$attest_resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['decision'])")
-  uid=$(echo "$attest_resp" | python3 -c "import sys,json; v=json.load(sys.stdin).get('attestation_uid'); print(v or '')")
-  txhash=$(echo "$attest_resp" | python3 -c "import sys,json; v=json.load(sys.stdin).get('tx_hash'); print(v or '')")
-
-  if [ "$decision" != "reject" ]; then
-    err "Attester decision was '$decision' — expected 'reject'"
-    exit 1
-  fi
-  if [ -z "$uid" ]; then
-    err "Attestation not submitted on-chain. Cannot run on-chain refund path."
-    exit 1
-  fi
-  ok "Attester signed REJECT attestation. UID: $uid (tx $txhash)"
-
-  log "5) escrow.release() should now revert (payee not verified)"
-  if cast send "$SETTLEMENT_ESCROW_ADDRESS" "release(bytes32,bytes32)" \
-        "$DEAL_ID" "$uid" \
-        --rpc-url "$DEV_RPC_URL" \
-        --private-key "$BUYER_PK" >/dev/null 2>&1; then
-    err "release() did NOT revert — escrow accepted a reject attestation. Bug!"
-    exit 1
-  fi
-  ok "release() reverted as expected"
-
-  log "6) Buyer refunds via attester-signed reject path"
-  cast send "$SETTLEMENT_ESCROW_ADDRESS" "refund(bytes32,bytes32)" \
-      "$DEAL_ID" "$uid" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$BUYER_PK" >/dev/null
-  ok "refunded"
-
-  local buyer_balance impostor_balance
-  buyer_balance=$(cast call "$MOCK_USDC_ADDRESS" "balanceOf(address)(uint256)" \
-      "$BUYER_ADDRESS" --rpc-url "$DEV_RPC_URL")
-  impostor_balance=$(cast call "$MOCK_USDC_ADDRESS" "balanceOf(address)(uint256)" \
-      "$IMPOSTOR_PAYEE" --rpc-url "$DEV_RPC_URL")
-
-  cat <<SUMMARY
-
-================================================================
-AttestRWA end-to-end REJECT path: SUCCESS
-================================================================
-  Deal id           : $DEAL_ID
-  Buyer             : $BUYER_ADDRESS
-  Impostor payee    : $IMPOSTOR_PAYEE  (NOT in developer feed)
-  Token (MockUSDC)  : $MOCK_USDC_ADDRESS
-  Escrow            : $SETTLEMENT_ESCROW_ADDRESS
-  Amount (uUSDC)    : $AMOUNT_BASE_UNITS
-  Attestation UID   : $uid
-  Attest tx hash    : $txhash
-  Buyer balance     : $buyer_balance  (refunded)
-  Impostor balance  : $impostor_balance  (received 0 — verified protection)
-================================================================
+  REJECT path: PASSED
+    deal         $DEAL_ID
+    attestation  $UID_
+    record       ${RECORD#"$ROOT"/}
 
 SUMMARY
-}
-
-run "$@"

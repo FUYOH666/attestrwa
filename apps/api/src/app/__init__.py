@@ -1,1 +1,1 @@
-"""Bankable Property OS API package."""
+"""AttestRWA reference attester service."""

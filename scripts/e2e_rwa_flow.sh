@@ -1,188 +1,77 @@
 #!/usr/bin/env bash
-# End-to-end RWA settlement flow against the local dev chain.
+# End-to-end APPROVE path on the local fork:
 #
-# Flow:
-#   1. Ensure ./scripts/dev-chain.sh is running.
-#   2. Ensure contracts are deployed (./scripts/deploy-contracts.sh).
-#   3. Start the FastAPI attester (if not running) with .dev-chain.state env.
-#   4. Mint Mock USDC to the buyer EOA.
-#   5. Buyer approves SettlementEscrow.
-#   6. Buyer deposits into SettlementEscrow under a deterministic dealId.
-#   7. Backend attester signs and broadcasts the EAS SettlementApproval.
-#   8. Anyone calls SettlementEscrow.release(dealId, attestationUid).
-#   9. Print payee balance + attestation explorer link.
+#   deposit -> attester decides -> record verified independently -> release
 #
-# Idempotent across restarts by clearing api pid/log and using a new dealId
-# each run (timestamp salt). Aborts on the first failure.
+# Needs ./scripts/dev-chain.sh and ./scripts/deploy-contracts.sh first.
 
 set -euo pipefail
+SCRIPT_TAG=e2e-approve
+# shellcheck source=scripts/lib/common.sh
+source "$(dirname "$0")/lib/common.sh"
 
-# shellcheck disable=SC2155
-export PATH="$HOME/.foundry/bin:$PATH"
+require_tools cast curl python3 uv
+ensure_api_up
 
-STATE_FILE="${ATTESTRWA_STATE_FILE:-.dev-chain.state}"
-API_LOG=/tmp/attestrwa-api.log
-API_PID_FILE=/tmp/attestrwa-api.pid
-API_HOST=127.0.0.1
-API_PORT=${ATTESTRWA_API_PORT:-8080}
+RPC="$DEV_RPC_URL"
+ESCROW="$SETTLEMENT_ESCROW_ADDRESS"
+TOKEN="$SETTLEMENT_TOKEN_ADDRESS"
+BUYER="$(dev_address "$ROLE_BUYER")"
+BUYER_KEY="$(dev_key "$ROLE_BUYER")"
+PAYEE="$(dev_address "$ROLE_PAYEE")"
+AMOUNT=580000000
+SALT="$(cast keccak "approve-$(date +%s)-$RANDOM")"
+DEADLINE=$(( $(cast block latest --field timestamp --rpc-url "$RPC") + 86400 ))
 
-# Anvil default account #1 = buyer (public test key, never use on mainnet)
-BUYER_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-BUYER_PK=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+send() { cast send "$@" --rpc-url "$RPC" >/dev/null; }
+balance_of() { cast call "$TOKEN" "balanceOf(address)(uint256)" "$1" --rpc-url "$RPC" | awk '{print $1}'; }
 
-# Demo payee (Bangkok Landmark Group authorized) = Anvil acc 6
-PAYEE_ADDRESS=0x976EA74026E726554dB657fA54763abd0C3a0aa9
+log "1/5 buyer mints demo tokens and deposits $AMOUNT for the registered payee"
+send "$TOKEN" "mint(address,uint256)" "$BUYER" "$AMOUNT" --private-key "$BUYER_KEY"
+send "$TOKEN" "approve(address,uint256)" "$ESCROW" "$AMOUNT" --private-key "$BUYER_KEY"
+send "$ESCROW" "deposit(bytes32,address,address,uint256,uint64)" \
+  "$SALT" "$PAYEE" "$TOKEN" "$AMOUNT" "$DEADLINE" --private-key "$BUYER_KEY"
+DEAL_ID="$(cast call "$ESCROW" "computeDealId(address,bytes32)(bytes32)" "$BUYER" "$SALT" --rpc-url "$RPC")"
+ok "deal $DEAL_ID"
 
-AMOUNT_BASE_UNITS=580000000 # 580 USDC
+log "2/5 the attester is told which deal to look at, and nothing else"
+DEAL_JSON="\"chain_id\": $DEV_CHAIN_ID, \"escrow\": \"$ESCROW\", \"deal_id\": \"$DEAL_ID\""
+BODY="{$DEAL_JSON, \"declared\": {\"jurisdiction\": \"TH\"}}"
+OTHER_BODY="{$DEAL_JSON, \"declared\": {\"jurisdiction\": \"US\"}}"
+RESPONSE="$(curl -fsS -X POST "http://${API_HOST}:${API_PORT}/attest/settlement" \
+  -H 'Content-Type: application/json' -H "X-API-Key: ${DEV_API_KEY}" -d "$BODY")"
+DECISION="$(printf '%s' "$RESPONSE" | json_field "['decision']")"
+UID_="$(printf '%s' "$RESPONSE" | json_field "['attestation_uid']")"
+[ "$DECISION" = "approve" ] || fail "expected approve, got $DECISION"
+ok "decision APPROVE, attestation $UID_"
 
-log() { printf '\n\033[1;36m[e2e]\033[0m %s\n' "$*" >&2; }
-ok()  { printf '\033[1;32m[ok]\033[0m  %s\n' "$*" >&2; }
-err() { printf '\033[1;31m[err]\033[0m %s\n' "$*" >&2; }
+log "3/5 anyone can check the record against the chain, the policy and the registry"
+mkdir -p "$RUN_DIR"
+RECORD="$RUN_DIR/last-approve.json"
+curl -fsS "http://${API_HOST}:${API_PORT}/records/${DEAL_ID}" >"$RECORD"
+verify_record "$RECORD" --rpc "$RPC" --policy "$POLICY_FILE" --registry "$REGISTRY_FILE" \
+  --recheck-inputs --strict
+ok "record verified (strict)"
 
-require_state() {
-  if [ ! -f "$STATE_FILE" ]; then
-    err "$STATE_FILE not found. Run ./scripts/dev-chain.sh first."
-    exit 1
-  fi
-  # shellcheck disable=SC1090
-  source "$STATE_FILE"
-  : "${DEV_RPC_URL:?missing in state}"
-  : "${EAS_SCHEMA_UID_SETTLEMENT_APPROVAL:?missing in state}"
-  : "${ATTESTER_ADDRESS:?missing in state}"
-  : "${ATTESTER_PRIVATE_KEY:?missing in state}"
-  : "${MOCK_USDC_ADDRESS:?run ./scripts/deploy-contracts.sh first}"
-  : "${SETTLEMENT_ESCROW_ADDRESS:?run ./scripts/deploy-contracts.sh first}"
-}
+log "4/5 a second request does not create a second decision"
+REUSED="$(curl -fsS -X POST "http://${API_HOST}:${API_PORT}/attest/settlement" \
+  -H 'Content-Type: application/json' -H "X-API-Key: ${DEV_API_KEY}" -d "$OTHER_BODY" \
+  | json_field "['reused']")"
+[ "$REUSED" = "True" ] || fail "the attester issued a second decision for the same deal"
+ok "the live decision was returned unchanged"
 
-ensure_api_up() {
-  if curl -fsS "http://${API_HOST}:${API_PORT}/healthz" >/dev/null 2>&1; then
-    ok "FastAPI already up on :${API_PORT}"
-    return 0
-  fi
-  log "Starting FastAPI attester on :${API_PORT} (log: ${API_LOG})…"
-  (
-    cd apps/api
-    DEV_RPC_URL="$DEV_RPC_URL" \
-    EAS_SCHEMA_UID_SETTLEMENT_APPROVAL="$EAS_SCHEMA_UID_SETTLEMENT_APPROVAL" \
-    ATTESTER_ADDRESS="$ATTESTER_ADDRESS" \
-    ATTESTER_PRIVATE_KEY="$ATTESTER_PRIVATE_KEY" \
-    EAS_ADDRESS="${EAS_ADDRESS:-0x4200000000000000000000000000000000000021}" \
-    DEV_CHAIN_ID="${DEV_CHAIN_ID:-84532}" \
-    nohup uv run uvicorn app.main:app --app-dir src --host "$API_HOST" --port "$API_PORT" \
-      >"$API_LOG" 2>&1 &
-    echo $! > "$API_PID_FILE"
-  )
-  for _ in $(seq 1 30); do
-    if curl -fsS "http://${API_HOST}:${API_PORT}/healthz" >/dev/null 2>&1; then
-      ok "FastAPI healthy (pid $(cat "$API_PID_FILE"))"
-      return 0
-    fi
-    sleep 1
-  done
-  err "FastAPI did not become healthy. Last log:"
-  tail -20 "$API_LOG" >&2
-  exit 1
-}
+log "5/5 release pays the payee"
+BEFORE="$(balance_of "$PAYEE")"
+send "$ESCROW" "release(bytes32,bytes32)" "$DEAL_ID" "$UID_" --private-key "$BUYER_KEY"
+AFTER="$(balance_of "$PAYEE")"
+[ $(( AFTER - BEFORE )) -eq "$AMOUNT" ] || fail "payee received $(( AFTER - BEFORE )), expected $AMOUNT"
+ok "payee received $AMOUNT"
 
-run() {
-  require_state
-  ensure_api_up
+cat >&2 <<SUMMARY
 
-  local salt="$(date +%s%N)"
-  local DEAL_ID="0x$(printf 'attestrwa-e2e-%s' "$salt" | shasum -a 256 | awk '{print $1}')"
-  local DEADLINE=$(( $(date +%s) + 86400 ))
-
-  log "Deal id (this run): $DEAL_ID"
-
-  log "1) Mint $AMOUNT_BASE_UNITS mUSDC to buyer $BUYER_ADDRESS"
-  cast send "$MOCK_USDC_ADDRESS" "mint(address,uint256)" \
-      "$BUYER_ADDRESS" "$AMOUNT_BASE_UNITS" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$ATTESTER_PRIVATE_KEY" >/dev/null
-  ok "minted"
-
-  log "2) Buyer approves SettlementEscrow"
-  cast send "$MOCK_USDC_ADDRESS" "approve(address,uint256)" \
-      "$SETTLEMENT_ESCROW_ADDRESS" "$AMOUNT_BASE_UNITS" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$BUYER_PK" >/dev/null
-  ok "approve"
-
-  log "3) Buyer deposits to escrow"
-  cast send "$SETTLEMENT_ESCROW_ADDRESS" \
-      "deposit(bytes32,address,address,uint256,uint64)" \
-      "$DEAL_ID" "$PAYEE_ADDRESS" "$MOCK_USDC_ADDRESS" "$AMOUNT_BASE_UNITS" "$DEADLINE" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$BUYER_PK" >/dev/null
-  ok "deposit"
-
-  log "4) Backend attester decides + signs + broadcasts EAS attestation"
-  local body
-  body=$(cat <<EOF
-{
-  "deal_id": "$DEAL_ID",
-  "buyer_wallet": "$BUYER_ADDRESS",
-  "payee_wallet": "$PAYEE_ADDRESS",
-  "token_address": "$MOCK_USDC_ADDRESS",
-  "amount_base_units": $AMOUNT_BASE_UNITS,
-  "developer_id": "developer-bangkok-landmark",
-  "jurisdiction": "TH",
-  "buyer_kyc_tier": 3,
-  "expires_in_seconds": 86400
-}
-EOF
-)
-  local attest_resp
-  attest_resp=$(curl -fsS -X POST \
-      "http://${API_HOST}:${API_PORT}/attest/settlement" \
-      -H 'Content-Type: application/json' \
-      -d "$body")
-  echo "$attest_resp" | python3 -m json.tool >&2
-
-  local decision uid txhash
-  decision=$(echo "$attest_resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['decision'])")
-  uid=$(echo "$attest_resp" | python3 -c "import sys,json; v=json.load(sys.stdin).get('attestation_uid'); print(v or '')")
-  txhash=$(echo "$attest_resp" | python3 -c "import sys,json; v=json.load(sys.stdin).get('tx_hash'); print(v or '')")
-
-  if [ "$decision" != "approve" ]; then
-    err "Attester decision was '$decision' — flow expected 'approve'"
-    exit 1
-  fi
-  if [ -z "$uid" ]; then
-    err "Attester did not submit attestation on-chain (uid empty). Check $API_LOG"
-    exit 1
-  fi
-  ok "Attestation UID: $uid (tx $txhash)"
-
-  log "5) Release escrow to payee using attestation"
-  cast send "$SETTLEMENT_ESCROW_ADDRESS" "release(bytes32,bytes32)" \
-      "$DEAL_ID" "$uid" \
-      --rpc-url "$DEV_RPC_URL" \
-      --private-key "$BUYER_PK" >/dev/null
-  ok "release"
-
-  local payee_balance
-  payee_balance=$(cast call "$MOCK_USDC_ADDRESS" "balanceOf(address)(uint256)" \
-      "$PAYEE_ADDRESS" --rpc-url "$DEV_RPC_URL")
-  ok "Payee balance now: $payee_balance base units"
-
-  cat <<SUMMARY
-
-================================================================
-AttestRWA end-to-end happy-path settlement: SUCCESS
-================================================================
-  Deal id           : $DEAL_ID
-  Buyer             : $BUYER_ADDRESS
-  Payee             : $PAYEE_ADDRESS
-  Token (MockUSDC)  : $MOCK_USDC_ADDRESS
-  Escrow            : $SETTLEMENT_ESCROW_ADDRESS
-  Amount (uUSDC)    : $AMOUNT_BASE_UNITS
-  Attestation UID   : $uid
-  Tx hash (attest)  : $txhash
-  Payee final bal   : $payee_balance
-================================================================
+  APPROVE path: PASSED
+    deal         $DEAL_ID
+    attestation  $UID_
+    record       ${RECORD#"$ROOT"/}
 
 SUMMARY
-}
-
-run "$@"

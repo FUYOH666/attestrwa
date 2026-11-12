@@ -1,77 +1,79 @@
 #!/usr/bin/env bash
-# Deploy SettlementEscrow + MockUSDC against the local dev chain. Reads the
-# attester key and schema UID from .dev-chain.state (produced by
-# scripts/dev-chain.sh).
+# Deploy the demo token and the escrow to the local fork, registering the
+# SettlementDecision schema if the chain does not have it yet.
 #
-# Idempotent across full restarts of the dev chain — anvil starts at a
-# known fork height with deterministic nonces, so the resulting addresses
-# are stable as long as the deployer EOA + nonce sequence are the same.
-#
-# Outputs deployed addresses both as console block and as ENV-like exports
-# appended to .dev-chain.state (so apps can `source .dev-chain.state` to
-# pick up MOCK_USDC_ADDRESS / SETTLEMENT_ESCROW_ADDRESS).
+# Three different development accounts are used on purpose: the deployer gets
+# no privileges, the owner manages the attester list, the attester only attests.
 
 set -euo pipefail
+SCRIPT_TAG=deploy
+# shellcheck source=scripts/lib/common.sh
+source "$(dirname "$0")/lib/common.sh"
 
-# shellcheck disable=SC2155
-export PATH="$HOME/.foundry/bin:$PATH"
+require_tools forge cast python3
+load_state
+[ -d contracts/lib/forge-std ] || ./scripts/install-contract-deps.sh
 
-STATE_FILE="${ATTESTRWA_STATE_FILE:-.dev-chain.state}"
+log "deploying to $DEV_RPC_URL"
+OUTPUT="$(
+  cd contracts
+  DEPLOYER_PRIVATE_KEY="$(dev_key "$ROLE_DEPLOYER")" \
+  ESCROW_OWNER_ADDRESS="$(dev_address "$ROLE_OWNER")" \
+  ATTESTER_ADDRESS="$(dev_address "$ROLE_ATTESTER")" \
+    forge script script/Deploy.s.sol --rpc-url "$DEV_RPC_URL" --broadcast 2>&1
+)" || { printf '%s\n' "$OUTPUT" >&2; fail "forge script failed"; }
 
-if [ ! -f "$STATE_FILE" ]; then
-  echo "[deploy] $STATE_FILE not found. Run ./scripts/dev-chain.sh first." >&2
-  exit 1
-fi
+value_of() { printf '%s\n' "$OUTPUT" | sed -n "s/^ *$1=//p" | tail -1; }
+ESCROW="$(value_of SETTLEMENT_ESCROW_ADDRESS)"
+TOKEN="$(value_of SETTLEMENT_TOKEN_ADDRESS)"
+SCHEMA_UID="$(value_of EAS_SCHEMA_UID)"
+[ -n "$ESCROW" ] && [ -n "$TOKEN" ] && [ -n "$SCHEMA_UID" ] \
+  || { printf '%s\n' "$OUTPUT" >&2; fail "could not read the deployed addresses"; }
 
-# shellcheck disable=SC1090
-source "$STATE_FILE"
-
-log() { printf '[deploy] %s\n' "$*" >&2; }
-
-cd contracts
-
-log "Building contracts…"
-forge build --silent
-
-log "Deploying MockUSDC + SettlementEscrow to $DEV_RPC_URL …"
-
-OUTPUT=$(PRIVATE_KEY="$ATTESTER_PRIVATE_KEY" \
-  EAS_SCHEMA_UID_SETTLEMENT_APPROVAL="$EAS_SCHEMA_UID_SETTLEMENT_APPROVAL" \
-  ATTESTER_ADDRESS="$ATTESTER_ADDRESS" \
-  forge script script/Deploy.s.sol \
-  --rpc-url "$DEV_RPC_URL" \
-  --broadcast \
-  --skip-simulation 2>&1)
-
-MOCK_USDC_ADDRESS=$(echo "$OUTPUT" | awk '/MockUSDC[[:space:]]*:/ {print $NF}')
-SETTLEMENT_ESCROW_ADDRESS=$(echo "$OUTPUT" | awk '/SettlementEscrow:/ {print $NF}')
-
-if [ -z "$MOCK_USDC_ADDRESS" ] || [ -z "$SETTLEMENT_ESCROW_ADDRESS" ]; then
-  echo "[deploy] Could not parse deploy addresses from script output:" >&2
-  echo "$OUTPUT" >&2
-  exit 1
-fi
-
-# Persist for downstream services
+# Drop any addresses from an earlier deployment, then record the new ones.
+grep -v -E '^(SETTLEMENT_ESCROW_ADDRESS|SETTLEMENT_TOKEN_ADDRESS|EAS_SCHEMA_UID)=' "$STATE_FILE" \
+  >"$STATE_FILE.tmp" || true
 {
-  echo ""
-  echo "# Contract addresses (appended by scripts/deploy-contracts.sh)"
-  echo "MOCK_USDC_ADDRESS=$MOCK_USDC_ADDRESS"
-  echo "SETTLEMENT_ESCROW_ADDRESS=$SETTLEMENT_ESCROW_ADDRESS"
-} >> "../$STATE_FILE"
+  cat "$STATE_FILE.tmp"
+  echo "SETTLEMENT_ESCROW_ADDRESS=$ESCROW"
+  echo "SETTLEMENT_TOKEN_ADDRESS=$TOKEN"
+  echo "EAS_SCHEMA_UID=$SCHEMA_UID"
+} >"$STATE_FILE"
+rm -f "$STATE_FILE.tmp"
 
-cat <<EOF
+mkdir -p deployments
+python3 - "$ESCROW" "$TOKEN" "$SCHEMA_UID" "$(dev_address "$ROLE_OWNER")" \
+  "$(dev_address "$ROLE_ATTESTER")" <<'PY'
+import json, sys
+escrow, token, schema_uid, owner, attester = sys.argv[1:6]
+json.dump(
+    {
+        "network": "anvil-fork",
+        "chain_id": 84532,
+        "eas": "0x4200000000000000000000000000000000000021",
+        "schema_uid": schema_uid,
+        "escrow": escrow.lower(),
+        "token": token.lower(),
+        "token_symbol": "mUSDC",
+        "token_decimals": 6,
+        "owner": owner.lower(),
+        "attester": attester.lower(),
+        "sanctions_oracle": "0x40c57923924b5c5c5455c48d93317139addac8fb",
+    },
+    open("deployments/anvil-fork.json", "w"),
+    indent=2,
+)
+open("deployments/anvil-fork.json", "a").write("\n")
+PY
 
-================================================================
-AttestRWA contracts deployed
-================================================================
-  MockUSDC            : $MOCK_USDC_ADDRESS
-  SettlementEscrow    : $SETTLEMENT_ESCROW_ADDRESS
-  Trusted attester    : $ATTESTER_ADDRESS
-  Schema UID          : $EAS_SCHEMA_UID_SETTLEMENT_APPROVAL
-  RPC                 : $DEV_RPC_URL
-  Deployer pre-minted : 1,000,000 mUSDC
+cat >&2 <<SUMMARY
 
-Addresses appended to ../$STATE_FILE
-================================================================
-EOF
+  Contracts deployed
+    SettlementEscrow $ESCROW
+    Demo token       $TOKEN  (mUSDC, anyone can mint)
+    Schema UID       $SCHEMA_UID
+    Owner            $(dev_address "$ROLE_OWNER")
+    Attester         $(dev_address "$ROLE_ATTESTER")
+    Next             ./scripts/e2e_rwa_flow.sh  or  ./scripts/demo-mode.sh
+
+SUMMARY

@@ -1,55 +1,68 @@
+"""HTTP surface of the reference attester."""
+
+from __future__ import annotations
+
 import logging
+import re
+import threading
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.auth import require_integrator
 from app.config import get_settings
+from app.errors import AttesterError
 from app.logging_config import configure_logging
-from app.schemas.attester import (
-    AttestRequest,
-    AttestResponse,
-    AttestationLookupResponse,
-    AttesterHealthResponse,
-)
-from app.services.attester_service import (
-    AttesterError,
-    DealRequest,
-    attest_for_deal,
-    attester_health,
-    decide_for_deal,
-)
-from app.services.eas_client import EASClient
-
+from app.schemas import AttestRequest, AttestResponse
+from app.service import AttesterService
 
 logger = logging.getLogger(__name__)
 
+_BYTES32_RE = re.compile(r"0x[0-9a-fA-F]{64}")
+_service: AttesterService | None = None
+_service_lock = threading.Lock()
+
+
+def get_service() -> AttesterService:
+    """Build the service on first use, so importing the app needs no chain."""
+    global _service
+    with _service_lock:
+        if _service is None:
+            _service = AttesterService.from_settings(get_settings())
+        return _service
+
 
 def _cors_origins() -> list[str]:
-    default_origins = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
     configured = get_settings().cors_origins
-    if not configured.strip():
-        return default_origins
-    return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    if configured.strip():
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def _bytes32(value: str, what: str) -> str:
+    if not _BYTES32_RE.fullmatch(value):
+        raise HTTPException(status_code=422, detail=f"{what} must be 0x followed by 64 hex digits")
+    return value.lower()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
-    logger.info("AttestRWA API starting version=%s", settings.api_version)
+    logger.info("AttestRWA attester starting version=%s", settings.api_version)
     yield
 
 
 app = FastAPI(
-    title="AttestRWA API",
+    title="AttestRWA attester",
     description=(
-        "AttestRWA attester: evaluates a settlement against a versioned policy and anchors "
-        "the decision on-chain as an EAS attestation."
+        "Reference attester for AttestRWA decision records. It reads a deal from the "
+        "escrow, evaluates a versioned policy over inputs with recorded sources, stores "
+        "the decision record and anchors its hash on-chain as an EAS attestation."
     ),
     version=get_settings().api_version,
     lifespan=lifespan,
@@ -59,122 +72,91 @@ app.add_middleware(
     allow_origins=_cors_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
+
+
+@app.exception_handler(AttesterError)
+async def attester_error_handler(_request: Request, exc: AttesterError) -> JSONResponse:
+    if exc.status >= 500:
+        logger.error("%s: %s", type(exc).__name__, exc)
+    return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
 
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
+    """Liveness. Does not touch the chain."""
     return {"status": "ok", "service": "attestrwa-api"}
 
 
-# ---- Attester endpoints -----------------------------------------------------
-
-
-def _explorer_url(chain_id: int | None, uid: str) -> str | None:
-    if chain_id == 84532:
-        return f"https://base-sepolia.easscan.org/attestation/view/{uid}"
-    if chain_id == 8453:
-        return f"https://base.easscan.org/attestation/view/{uid}"
-    return None
+@app.get("/attest/healthz")
+def attester_health(service: AttesterService = Depends(get_service)) -> dict[str, Any]:
+    """Readiness: chain reachable, escrow wired to the schema, attester trusted."""
+    return service.health()
 
 
 @app.post("/attest/settlement", response_model=AttestResponse)
-def post_attest_settlement(body: AttestRequest) -> dict[str, object]:
-    """Decide on a settlement and (optionally) submit an EAS attestation."""
-    logger.info(
-        "Attestation request deal=%s buyer=%s amount=%s developer=%s",
-        body.deal_id,
-        body.buyer_wallet,
-        body.amount_base_units,
-        body.developer_id,
+def attest_settlement(
+    body: AttestRequest,
+    caller: str = Depends(require_integrator),
+    service: AttesterService = Depends(get_service),
+) -> dict[str, Any]:
+    """Decide about one escrowed deal and anchor the decision.
+
+    Idempotent: while a decision for the deal is live on-chain, the stored
+    record is returned and no new attestation is made.
+    """
+    outcome = service.attest(
+        chain_id=body.chain_id,
+        escrow=body.escrow,
+        deal_id=body.deal_id,
+        declared=dict(body.declared),
+        caller=caller,
     )
-    request = DealRequest(
-        deal_id=bytes.fromhex(body.deal_id[2:]),
-        buyer_wallet=body.buyer_wallet,
-        payee_wallet=body.payee_wallet,
-        token_address=body.token_address,
-        amount_base_units=body.amount_base_units,
-        developer_id=body.developer_id,
-        jurisdiction=body.jurisdiction,
-        buyer_kyc_tier=body.buyer_kyc_tier,
-        expires_in_seconds=body.expires_in_seconds,
-    )
-    try:
-        decision = decide_for_deal(request)
-    except AttesterError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    chain_id: int | None = None
-    attestation_uid: str | None = None
-    tx_hash: str | None = None
-    block_number: int | None = None
-    gas_used: int | None = None
-
-    submit_on_chain = (
-        get_settings().attestrwa_submit_on_chain
-        if hasattr(get_settings(), "attestrwa_submit_on_chain")
-        else True
-    )
-
-    if submit_on_chain:
-        try:
-            client = EASClient()
-            chain_id = client.config.chain_id
-            result = attest_for_deal(request, decision, client=client)
-            attestation_uid = result.uid
-            tx_hash = result.tx_hash
-            block_number = result.block_number
-            gas_used = result.gas_used
-        except Exception as exc:
-            logger.warning("on-chain attest failed: %s — returning decision only", exc)
-
-    explanation = (
-        f"Decision {decision.decision} — payee_verified={decision.payee_verified} "
-        f"capital_class={decision.capital_class}"
-    )
-    if decision.reasons:
-        explanation += " :: " + "; ".join(decision.reasons)
-
+    envelope = outcome.envelope
+    decision = envelope["record"]["decision"]
     return {
-        "decision": decision.decision,
         "deal_id": body.deal_id,
-        "capital_class": decision.capital_class,
-        "payee_verified": decision.payee_verified,
-        "reasons": decision.reasons,
-        "rule_results": decision.rule_results,
-        "taint": {
-            "wallet": decision.taint.wallet,
-            "capital_class": decision.taint.capital_class,
-            "signals": decision.taint.signals,
-            "explanation": decision.taint.explanation,
-        }
-        if decision.taint is not None
-        else None,
-        "evidence_hash": "0x" + decision.evidence_hash.hex(),
-        "policy_pack_id": decision.policy_pack_id,
-        "policy_hash": decision.policy_hash,
-        "expires_at": decision.expires_at,
-        "attestation_uid": attestation_uid,
-        "tx_hash": tx_hash,
-        "block_number": block_number,
-        "gas_used": gas_used,
-        "chain_id": chain_id,
-        "eas_explorer_url": _explorer_url(chain_id, attestation_uid) if attestation_uid else None,
-        "explanation": explanation,
+        "decision": decision["outcome"],
+        "decision_code": decision["code"],
+        "failed_rules": decision["failed_rules"],
+        "record_hash": envelope["record_hash"],
+        "attestation_uid": envelope["attestation"]["uid"],
+        "tx_hash": envelope["attestation"].get("tx_hash"),
+        "reused": outcome.reused,
+        "envelope": envelope,
     }
 
 
-@app.get("/attest/healthz", response_model=AttesterHealthResponse)
-def get_attest_healthz() -> dict[str, object]:
-    return attester_health()
+@app.get("/attest/{deal_id}")
+def get_decisions(deal_id: str, service: AttesterService = Depends(get_service)) -> dict[str, Any]:
+    """Decisions made about a deal, with their current on-chain state."""
+    return service.lookup(_bytes32(deal_id, "deal_id"))
 
 
-@app.get("/attest/{deal_id}", response_model=AttestationLookupResponse)
-def get_attestation_for_deal(deal_id: str) -> dict[str, object]:
-    """Placeholder attestation lookup — Week 2.3 wires it to an indexer."""
-    return {
-        "deal_id": deal_id,
-        "attestation": None,
-        "note": "Per-deal attestation lookup is wired via the EAS indexer in Week 3.",
-    }
+@app.get("/records/by-hash/{record_hash}")
+def get_record_by_hash(
+    record_hash: str, service: AttesterService = Depends(get_service)
+) -> dict[str, Any]:
+    envelope = service.record_by_hash(_bytes32(record_hash, "record_hash"))
+    if envelope is None:
+        raise HTTPException(status_code=404, detail="no record with this hash")
+    return envelope
+
+
+@app.get("/records/{deal_id}")
+def get_record(deal_id: str, service: AttesterService = Depends(get_service)) -> dict[str, Any]:
+    """The latest decision record for a deal."""
+    envelope = service.record(_bytes32(deal_id, "deal_id"))
+    if envelope is None:
+        raise HTTPException(status_code=404, detail="no decision recorded for this deal")
+    return envelope
+
+
+@app.post("/verify")
+def verify_record(
+    document: dict[str, Any] = Body(...), service: AttesterService = Depends(get_service)
+) -> dict[str, Any]:
+    """Run the independent verifier on a record, against this attester's chain,
+    policy file and registry file. The same checks as ``attestrwa verify``."""
+    return service.verify(document)

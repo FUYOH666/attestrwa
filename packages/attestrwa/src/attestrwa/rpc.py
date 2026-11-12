@@ -79,6 +79,18 @@ class JsonRpc:
     def block_number(self) -> int:
         return int(self.request("eth_blockNumber", []), 16)
 
+    def block(self, tag: int | str = "latest") -> tuple[int, int]:
+        """Return ``(number, timestamp)`` of a block."""
+        result = self.request(
+            "eth_getBlockByNumber", [hex(tag) if isinstance(tag, int) else tag, False]
+        )
+        if not isinstance(result, dict):
+            raise RpcError("eth_getBlockByNumber returned no block")
+        return int(result["number"], 16), int(result["timestamp"], 16)
+
+    def balance(self, address: str) -> int:
+        return int(self.request("eth_getBalance", [address, "latest"]), 16)
+
     def eth_call(self, to: str, data: bytes, block: int | str = "latest") -> bytes:
         tag = hex(block) if isinstance(block, int) else block
         result = self.request("eth_call", [{"to": to, "data": to_hex(data)}, tag])

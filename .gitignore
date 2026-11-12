@@ -38,3 +38,7 @@ apps/api/records/
 .ruff_cache/
 dist/
 *.egg-info/
+
+# Local run state (pids, logs, attester record store, local deployment)
+.run/
+deployments/anvil-fork.json

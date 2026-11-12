@@ -1,25 +1,45 @@
 [project]
 name = "attestrwa-api"
-version = "1.0.0-alpha.1"
-description = "AttestRWA — Settlement Attestation Layer API. Off-chain attester service that signs on-chain EAS attestations for RWA stablecoin settlements."
+version = "2.0.0"
+description = "AttestRWA reference attester: reads a deal from the escrow, evaluates a versioned policy, stores the decision record and anchors its hash as an EAS attestation."
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi",
-    "httpx",
-    "pydantic",
-    "pydantic-settings",
-    "pyyaml",
-    "uvicorn",
-    "web3>=7.6",
+    "attestrwa",
     "eth-account>=0.13",
-    "eth-abi>=5.1",
+    "fastapi>=0.115",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "uvicorn>=0.30",
+    "web3>=7.6",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest",
+    "httpx>=0.27",
+    "pytest>=8",
 ]
+
+[tool.uv.sources]
+attestrwa = { path = "../../packages/attestrwa", editable = true }
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares dependencies as argument defaults by design.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Body", "fastapi.Header"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S"]
