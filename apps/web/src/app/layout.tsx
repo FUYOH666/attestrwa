@@ -1,25 +1,20 @@
 import type {Metadata} from "next";
+
+import {Shell} from "@/components/Shell";
+
 import "./globals.css";
 
-import {Providers} from "./providers";
-
 export const metadata: Metadata = {
-  title: "AttestRWA — Settlement Attestation Layer for RWA",
+  title: "AttestRWA — prove why a settlement was allowed",
   description:
-    "On-chain compliance bridge that turns bank verification rules into machine-verifiable EAS attestations, so stablecoin payments for real-world assets release only when the deal is bank-grade.",
-  openGraph: {
-    title: "AttestRWA",
-    description:
-      "Settlement Attestation Layer for RWA on Base Sepolia (EAS + programmable escrow).",
-    type: "website",
-  },
+    "Decision records for compliance-gated stablecoin settlement: the policy version, every input and its source, the rules that held, anchored on-chain and verifiable by anyone.",
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Shell>{children}</Shell>
       </body>
     </html>
   );

@@ -27,6 +27,7 @@ rpc_answers() {
     --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' >/dev/null 2>&1
 }
 
+FRESH_CHAIN=0
 if rpc_answers; then
   if [ -f "$RUN_DIR/anvil.pid" ] && kill -0 "$(cat "$RUN_DIR/anvil.pid")" 2>/dev/null; then
     log "anvil already running on $RPC_URL (pid $(cat "$RUN_DIR/anvil.pid")); reusing"
@@ -38,6 +39,7 @@ else
   nohup anvil --fork-url "$FORK_URL" --port "$RPC_PORT" --chain-id "$CHAIN_ID" \
     --block-time "$BLOCK_TIME" >"$RUN_DIR/anvil.log" 2>&1 &
   echo $! >"$RUN_DIR/anvil.pid"
+  FRESH_CHAIN=1
   for _ in $(seq 1 30); do
     rpc_answers && break
     sleep 1
@@ -52,12 +54,15 @@ code_size() { cast code "$1" --rpc-url "$RPC_URL" 2>/dev/null | wc -c | tr -d ' 
   || fail "the sanctions oracle is not present at $SANCTIONS_ORACLE_ADDRESS"
 ok "EAS and the sanctions oracle are present on the fork"
 
-cat >"$STATE_FILE" <<STATE
+# A reused chain keeps its state file, which also holds the deployed addresses.
+if [ "$FRESH_CHAIN" = "1" ] || [ ! -f "$STATE_FILE" ]; then
+  cat >"$STATE_FILE" <<STATE
 # Local development chain state, written by scripts/dev-chain.sh. Not tracked.
 DEV_RPC_URL=$RPC_URL
 DEV_CHAIN_ID=$CHAIN_ID
 DEV_FORK_URL=$FORK_URL
 STATE
+fi
 
 cat >&2 <<SUMMARY
 

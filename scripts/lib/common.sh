@@ -66,8 +66,17 @@ api_healthy() { curl -fsS "http://${API_HOST}:${API_PORT}/healthz" >/dev/null 2>
 ensure_api_up() {
   require_deployment
   if api_healthy; then
-    ok "attester already answering on :${API_PORT}"
-    return 0
+    local served
+    served="$(curl -fsS "http://${API_HOST}:${API_PORT}/attest/healthz" | json_field "['escrow']" || true)"
+    if [ "$served" = "$(printf '%s' "$SETTLEMENT_ESCROW_ADDRESS" | tr 'A-F' 'a-f')" ]; then
+      ok "attester already answering on :${API_PORT}"
+      return 0
+    fi
+    [ -f "$RUN_DIR/api.pid" ] \
+      || fail "port ${API_PORT} is used by a service this script did not start; set ATTESTRWA_API_PORT"
+    log "the running attester serves another escrow; restarting it"
+    stop_pid_file "$RUN_DIR/api.pid" "attester"
+    rm -rf "$RUN_DIR/records"
   fi
   mkdir -p "$RUN_DIR"
   log "starting the attester on :${API_PORT} (log: .run/api.log)"
