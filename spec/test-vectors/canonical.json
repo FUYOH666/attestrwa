@@ -1,0 +1,100 @@
+{
+  "description": "Canonicalisation vectors for Decision Record v0.1. `canonical` is the exact UTF-8 text that must be hashed; `keccak256` is the hash of those bytes.",
+  "vectors": [
+    {
+      "name": "empty object",
+      "value": {},
+      "canonical": "{}",
+      "keccak256": "0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d"
+    },
+    {
+      "name": "key order",
+      "value": {
+        "b": 1,
+        "a": 2,
+        "c": [
+          3,
+          2,
+          1
+        ]
+      },
+      "canonical": "{\"a\":2,\"b\":1,\"c\":[3,2,1]}",
+      "keccak256": "0xc46dca7ff8c25effae11ea7162cdae2296a708112ce4e2601323676fc02f0a8a"
+    },
+    {
+      "name": "nested",
+      "value": {
+        "z": {
+          "y": [
+            true,
+            false,
+            null
+          ],
+          "x": {
+            "w": "v"
+          }
+        },
+        "a": []
+      },
+      "canonical": "{\"a\":[],\"z\":{\"x\":{\"w\":\"v\"},\"y\":[true,false,null]}}",
+      "keccak256": "0x4ea09c731ed3478f0f4c411411e66ff6e78a5f56f061902e3884a84a4564c9a1"
+    },
+    {
+      "name": "integers",
+      "value": {
+        "zero": 0,
+        "negative": -17,
+        "max_safe": 9007199254740991
+      },
+      "canonical": "{\"max_safe\":9007199254740991,\"negative\":-17,\"zero\":0}",
+      "keccak256": "0xe94c378920928bc8b92affb2f111db61cbcfa315422c1203dfa44802232fe831"
+    },
+    {
+      "name": "large amount as string",
+      "value": {
+        "amount": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+      },
+      "canonical": "{\"amount\":\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"}",
+      "keccak256": "0xa5bd9dc1c1b8a9d2be350286e4c5ebe0102bf3e2f6580f4c80f95ba58684c67c"
+    },
+    {
+      "name": "string escapes",
+      "value": {
+        "s": "quote \" backslash \\ tab \t newline \n nul \u0000 unit \u001f"
+      },
+      "canonical": "{\"s\":\"quote \\\" backslash \\\\ tab \\t newline \\n nul \\u0000 unit \\u001f\"}",
+      "keccak256": "0xb997ec62c08f38bce769260f0ff436d36a29d816332645a1e67cb03ae7507b18"
+    },
+    {
+      "name": "unicode",
+      "value": {
+        "s": "ริเวอร์ไซด์ — Öl € 😀  "
+      },
+      "canonical": "{\"s\":\"ริเวอร์ไซด์ — Öl € 😀  \"}",
+      "keccak256": "0xa370d082424ad24567f3a9d30fa281df7e49d56e0b1eae26957ea244086a6a09"
+    },
+    {
+      "name": "address and hash",
+      "value": {
+        "a": "0xabababababababababababababababababababab",
+        "h": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "canonical": "{\"a\":\"0xabababababababababababababababababababab\",\"h\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\"}",
+      "keccak256": "0xc0ac95f0605e536ed61981ca45759c6f14522a525093da42c1f28fbc76417408"
+    },
+    {
+      "name": "array of mixed scalars",
+      "value": [
+        1,
+        "1",
+        true,
+        null,
+        {
+          "k": []
+        }
+      ],
+      "canonical": "[1,\"1\",true,null,{\"k\":[]}]",
+      "keccak256": "0x1da14a96614eb679ff79cfb8464221065832e0032178f9c1fbc626b10f5d9edc"
+    }
+  ]
+}

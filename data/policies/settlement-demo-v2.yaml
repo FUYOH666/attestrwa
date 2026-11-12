@@ -1,0 +1,44 @@
+pack_id: settlement-demo
+version: "2.0.0"
+description: >
+  Demonstration policy for an escrowed stablecoin settlement. Synthetic and
+  illustrative only; it is not legal or compliance advice.
+
+# Every name a rule may use, its type, and the kind of source it must come
+# from. The attester refuses to build a record, and the verifier refuses to
+# accept one, when an input arrives from a different kind of source.
+inputs:
+  payee_registered:
+    type: bool
+    source: registry          # membership in the payee registry file
+    provider: payee_registry
+    of: payee
+  payee_sanctioned:
+    type: bool
+    source: onchain           # Chainalysis sanctions oracle, read at a fixed block
+    provider: sanctions_oracle
+    of: payee
+  buyer_sanctioned:
+    type: bool
+    source: onchain
+    provider: sanctions_oracle
+    of: buyer
+  amount:
+    type: int
+    source: subject           # read from the escrow's own deal state
+    field: amount
+  jurisdiction:
+    type: string
+    source: declared          # stated by the authenticated integrator, not verified
+
+rules:
+  - id: payee-is-registered
+    require: payee_registered == true
+  - id: payee-not-sanctioned
+    require: payee_sanctioned == false
+  - id: buyer-not-sanctioned
+    require: buyer_sanctioned == false
+  - id: amount-within-limit
+    require: amount <= 1000000000000
+  - id: supported-jurisdiction
+    require: jurisdiction == "TH" or jurisdiction == "SG" or jurisdiction == "AE"

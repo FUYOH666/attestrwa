@@ -1,0 +1,42 @@
+pack_id: settlement-demo
+version: "2.1.0"
+description: >
+  Stricter revision of the demonstration policy: a lower amount limit and a
+  shorter jurisdiction list. Used to show that a policy change produces a
+  different, provable policy hash. Synthetic and illustrative only.
+
+inputs:
+  payee_registered:
+    type: bool
+    source: registry
+    provider: payee_registry
+    of: payee
+  payee_sanctioned:
+    type: bool
+    source: onchain
+    provider: sanctions_oracle
+    of: payee
+  buyer_sanctioned:
+    type: bool
+    source: onchain
+    provider: sanctions_oracle
+    of: buyer
+  amount:
+    type: int
+    source: subject
+    field: amount
+  jurisdiction:
+    type: string
+    source: declared
+
+rules:
+  - id: payee-is-registered
+    require: payee_registered == true
+  - id: payee-not-sanctioned
+    require: payee_sanctioned == false
+  - id: buyer-not-sanctioned
+    require: buyer_sanctioned == false
+  - id: amount-within-limit
+    require: amount <= 250000000000
+  - id: supported-jurisdiction
+    require: jurisdiction == "TH" or jurisdiction == "SG"

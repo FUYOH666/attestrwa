@@ -1,0 +1,583 @@
+"""Independent verification of a decision record.
+
+The verifier answers one question: *does this record explain the decision
+that is anchored on-chain, and does the decision follow from the record?*
+
+It never trusts the envelope around a record. Offline it recomputes the hash
+and replays the rules. Given an RPC endpoint it reads the EAS attestation and
+the escrow's own state and compares both with the record. Given the policy
+and registry files it confirms the record applied exactly those bytes.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+from attestrwa import rpc as chain
+from attestrwa.eas import DECISION_CODES, DecisionDataError, decode_decision, schema_uid
+from attestrwa.hashing import to_hex
+from attestrwa.policy import DSLError, PolicyPack, Rule, evaluate_rule, names_in
+from attestrwa.record import (
+    RecordError,
+    context_from_inputs,
+    input_problems,
+    pack_problems,
+    record_hash,
+    validate_record,
+)
+from attestrwa.registry import Registry
+
+PASS = "pass"  # noqa: S105 - a status label, not a credential
+FAIL = "fail"
+SKIP = "skip"
+
+GROUPS = ("Record", "Policy", "Registry", "On-chain")
+
+
+@dataclass(slots=True, frozen=True)
+class Check:
+    id: str
+    group: str
+    status: str
+    detail: str
+
+
+@dataclass(slots=True)
+class Report:
+    """Result of verifying one record."""
+
+    checks: list[Check] = field(default_factory=list)
+    strict: bool = False
+    record_hash: str | None = None
+    summary: dict[str, Any] = field(default_factory=dict)
+
+    def add(self, check_id: str, group: str, status: str, detail: str) -> None:
+        self.checks.append(Check(id=check_id, group=group, status=status, detail=detail))
+
+    def count(self, status: str) -> int:
+        return sum(1 for check in self.checks if check.status == status)
+
+    @property
+    def ok(self) -> bool:
+        if self.count(FAIL):
+            return False
+        return not (self.strict and self.count(SKIP))
+
+    @property
+    def anchored(self) -> bool:
+        """True when the record was actually compared with an on-chain attestation."""
+        return any(
+            check.id == "attestation.record_hash" and check.status == PASS for check in self.checks
+        )
+
+    @property
+    def verdict(self) -> str:
+        if not self.ok:
+            return "NOT VERIFIED"
+        return "VERIFIED" if self.anchored else "CONSISTENT (not checked against the chain)"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "anchored": self.anchored,
+            "verdict": self.verdict,
+            "strict": self.strict,
+            "record_hash": self.record_hash,
+            "summary": self.summary,
+            "counts": {status: self.count(status) for status in (PASS, FAIL, SKIP)},
+            "checks": [
+                {"id": c.id, "group": c.group, "status": c.status, "detail": c.detail}
+                for c in self.checks
+            ],
+        }
+
+
+def _short(value: str) -> str:
+    return value if len(value) <= 18 else f"{value[:10]}…{value[-6:]}"
+
+
+# ---- Offline checks --------------------------------------------------------
+
+
+def _check_replay(body: Mapping[str, Any], report: Report) -> None:
+    try:
+        context = context_from_inputs(body["inputs"])
+        mismatches: list[str] = []
+        for rule in body["rules"]:
+            unknown = names_in(rule["expression"]) - context.keys()
+            if unknown:
+                mismatches.append(
+                    f"rule {rule['id']!r} uses unrecorded input(s) {', '.join(sorted(unknown))}"
+                )
+                continue
+            actual = evaluate_rule(Rule(id=rule["id"], expression=rule["expression"]), context)
+            if actual != rule["result"]:
+                mismatches.append(
+                    f"rule {rule['id']!r} is recorded as {rule['result']} but evaluates to {actual}"
+                )
+    except DSLError as exc:
+        report.add("record.replay", "Record", FAIL, f"rules cannot be replayed: {exc}")
+        return
+    if mismatches:
+        report.add("record.replay", "Record", FAIL, "; ".join(mismatches))
+        return
+    report.add(
+        "record.replay",
+        "Record",
+        PASS,
+        f"{len(body['rules'])} rule(s) re-evaluated from the recorded inputs; all results match",
+    )
+
+    failed = [rule["id"] for rule in body["rules"] if not rule["result"]]
+    outcome = "reject" if failed else "approve"
+    decision = body["decision"]
+    if decision["outcome"] != outcome or decision["failed_rules"] != failed:
+        report.add(
+            "record.decision",
+            "Record",
+            FAIL,
+            f"the rules give {outcome} (failed: {failed or 'none'}) but the record says "
+            f"{decision['outcome']} (failed: {decision['failed_rules'] or 'none'})",
+        )
+    else:
+        report.add(
+            "record.decision",
+            "Record",
+            PASS,
+            f"decision {outcome.upper()} follows from the rules"
+            + (f" (failed: {', '.join(failed)})" if failed else ""),
+        )
+
+
+def _check_policy(body: Mapping[str, Any], pack: PolicyPack | None, report: Report) -> None:
+    if pack is None:
+        report.add(
+            "policy.match",
+            "Policy",
+            SKIP,
+            "no policy file given (--policy); cannot confirm the rules are those of "
+            f"{body['policy']['pack_id']}@{body['policy']['version']}",
+        )
+        return
+    problems = pack_problems(body, pack)
+    if problems:
+        report.add("policy.match", "Policy", FAIL, "; ".join(problems))
+    else:
+        report.add(
+            "policy.match",
+            "Policy",
+            PASS,
+            f"policy file {pack.pack_id}@{pack.version} hashes to {_short(pack.sha256)}; "
+            "rules, input types and input sources match the record",
+        )
+
+
+def _check_registry(body: Mapping[str, Any], registry: Registry | None, report: Report) -> None:
+    items = [item for item in body["inputs"] if item["source"]["kind"] == "registry"]
+    if not items:
+        return
+    if registry is None:
+        report.add(
+            "registry.match",
+            "Registry",
+            SKIP,
+            f"no registry file given (--registry); {len(items)} registry input(s) not re-checked",
+        )
+        return
+    problems: list[str] = []
+    for item in items:
+        source = item["source"]
+        if source["sha256"] != registry.sha256:
+            problems.append(
+                f"input {item['name']!r} refers to registry {_short(source['sha256'])}, "
+                f"the file is {_short(registry.sha256)}"
+            )
+            continue
+        if item["type"] != "bool":
+            problems.append(f"input {item['name']!r}: registry inputs must be bool")
+            continue
+        member = registry.contains(source["key"])
+        if member != item["value"]:
+            problems.append(
+                f"input {item['name']!r} is recorded as {item['value']} but {source['key']} "
+                f"is {'in' if member else 'not in'} the registry"
+            )
+    if problems:
+        report.add("registry.match", "Registry", FAIL, "; ".join(problems))
+    else:
+        report.add(
+            "registry.match",
+            "Registry",
+            PASS,
+            f"registry {registry.registry_id}@{registry.version} hashes to "
+            f"{_short(registry.sha256)}; {len(items)} membership claim(s) confirmed",
+        )
+
+
+# ---- On-chain checks -------------------------------------------------------
+
+
+def _check_chain(
+    body: Mapping[str, Any],
+    computed_hash: bytes,
+    rpc: Any,
+    uid: str,
+    recheck_inputs: bool,
+    report: Report,
+) -> None:
+    subject = body["subject"]
+    anchor = body["anchor"]
+    group = "On-chain"
+
+    actual_chain = rpc.chain_id()
+    if actual_chain != subject["chain_id"]:
+        report.add(
+            "chain.network",
+            group,
+            FAIL,
+            f"the RPC serves chain {actual_chain}, the record is about chain {subject['chain_id']}",
+        )
+        return
+    report.add("chain.network", group, PASS, f"RPC serves chain {actual_chain}")
+
+    expected_schema = to_hex(schema_uid())
+    if anchor["schema_uid"] != expected_schema:
+        report.add(
+            "attestation.schema",
+            group,
+            FAIL,
+            f"record anchors to schema {_short(anchor['schema_uid'])}, "
+            f"SettlementDecision is {_short(expected_schema)}",
+        )
+        return
+
+    attestation = chain.read_attestation(rpc, anchor["eas"], uid)
+    if not attestation.exists:
+        report.add("attestation.exists", group, FAIL, f"no attestation {_short(uid)} on this chain")
+        return
+    report.add(
+        "attestation.exists",
+        group,
+        PASS,
+        f"attestation {_short(uid)} found, made at {attestation.time}",
+    )
+
+    if to_hex(attestation.schema) != expected_schema:
+        report.add(
+            "attestation.schema",
+            group,
+            FAIL,
+            f"attestation uses schema {_short(to_hex(attestation.schema))}",
+        )
+        return
+    report.add("attestation.schema", group, PASS, "schema is SettlementDecision")
+
+    try:
+        data = decode_decision(attestation.data)
+    except DecisionDataError as exc:
+        report.add("attestation.data", group, FAIL, f"attestation data is malformed: {exc}")
+        return
+
+    if data.record_hash == computed_hash:
+        report.add(
+            "attestation.record_hash",
+            group,
+            PASS,
+            "the attestation commits to exactly this record",
+        )
+    else:
+        report.add(
+            "attestation.record_hash",
+            group,
+            FAIL,
+            f"the attestation commits to {_short(to_hex(data.record_hash))}, "
+            f"this record hashes to {_short(to_hex(computed_hash))}",
+        )
+
+    if to_hex(data.policy_hash) == body["policy"]["sha256"]:
+        report.add(
+            "attestation.policy_hash", group, PASS, "on-chain policy hash matches the record"
+        )
+    else:
+        report.add(
+            "attestation.policy_hash",
+            group,
+            FAIL,
+            f"on-chain policy hash is {_short(to_hex(data.policy_hash))}, "
+            f"the record says {_short(body['policy']['sha256'])}",
+        )
+
+    deal_mismatch = [
+        name
+        for name, on_chain, recorded in (
+            ("deal_id", to_hex(data.deal_id), subject["deal_id"]),
+            ("payee", data.payee, subject["payee"]),
+            ("token", data.token, subject["token"]),
+            ("amount", str(data.amount), subject["amount"]),
+        )
+        if on_chain != recorded
+    ]
+    if deal_mismatch:
+        report.add(
+            "attestation.deal",
+            group,
+            FAIL,
+            f"attestation and record disagree on: {', '.join(deal_mismatch)}",
+        )
+    else:
+        report.add(
+            "attestation.deal", group, PASS, "deal id, payee, token and amount match the record"
+        )
+
+    if data.decision == body["decision"]["code"]:
+        report.add(
+            "attestation.decision",
+            group,
+            PASS,
+            f"on-chain decision is {body['decision']['outcome'].upper()}",
+        )
+    else:
+        names = {code: name for name, code in DECISION_CODES.items()}
+        report.add(
+            "attestation.decision",
+            group,
+            FAIL,
+            f"on-chain decision is {names.get(data.decision, data.decision)}, "
+            f"the record says {body['decision']['outcome']}",
+        )
+
+    if attestation.recipient == subject["escrow"]:
+        report.add("attestation.recipient", group, PASS, "attestation is addressed to this escrow")
+    else:
+        report.add(
+            "attestation.recipient",
+            group,
+            FAIL,
+            f"attestation is addressed to {attestation.recipient}, not the record's escrow",
+        )
+
+    if attestation.attester == body["attester"]["address"]:
+        report.add("attestation.attester", group, PASS, f"attested by {attestation.attester}")
+    else:
+        report.add(
+            "attestation.attester",
+            group,
+            FAIL,
+            f"attested by {attestation.attester}, the record names {body['attester']['address']}",
+        )
+
+    if attestation.revocation_time:
+        report.add(
+            "attestation.not_revoked",
+            group,
+            FAIL,
+            f"the attester revoked this decision at {attestation.revocation_time}",
+        )
+    else:
+        report.add("attestation.not_revoked", group, PASS, "not revoked")
+
+    if attestation.time >= subject["deposited_at"]:
+        report.add("attestation.time", group, PASS, "attested after the deposit it refers to")
+    else:
+        report.add(
+            "attestation.time",
+            group,
+            FAIL,
+            f"attested at {attestation.time}, before the deposit at {subject['deposited_at']}",
+        )
+
+    escrow = subject["escrow"]
+    escrow_eas = chain.read_escrow_eas(rpc, escrow)
+    escrow_schema = to_hex(chain.read_escrow_schema_uid(rpc, escrow))
+    if escrow_eas == anchor["eas"] and escrow_schema == anchor["schema_uid"]:
+        report.add("escrow.config", group, PASS, "escrow reads the same EAS contract and schema")
+    else:
+        report.add(
+            "escrow.config",
+            group,
+            FAIL,
+            f"escrow is configured with EAS {escrow_eas} and schema {_short(escrow_schema)}",
+        )
+
+    deal = chain.read_deal(rpc, escrow, subject["deal_id"])
+    if deal.status == 0:
+        report.add("escrow.deal", group, FAIL, "the escrow has no such deal")
+    else:
+        differences = [
+            name
+            for name, on_chain, recorded in (
+                ("buyer", deal.buyer, subject["buyer"]),
+                ("payee", deal.payee, subject["payee"]),
+                ("token", deal.token, subject["token"]),
+                ("amount", str(deal.amount), subject["amount"]),
+                ("deadline", deal.deadline, subject["deadline"]),
+                ("deposited_at", deal.deposited_at, subject["deposited_at"]),
+            )
+            if on_chain != recorded
+        ]
+        if differences:
+            report.add(
+                "escrow.deal",
+                group,
+                FAIL,
+                f"the escrow's deal differs from the record on: {', '.join(differences)}",
+            )
+        else:
+            report.add(
+                "escrow.deal",
+                group,
+                PASS,
+                f"the escrow holds this exact deal (now {deal.status_name})",
+            )
+        report.summary["deal_status"] = deal.status_name
+
+    if chain.read_attester_trusted(rpc, escrow, attestation.attester):
+        report.add("escrow.attester_trusted", group, PASS, "the escrow trusts this attester")
+    else:
+        report.add(
+            "escrow.attester_trusted",
+            group,
+            FAIL,
+            "the escrow does not (or no longer) trust this attester",
+        )
+
+    onchain_inputs = [item for item in body["inputs"] if item["source"]["kind"] == "onchain"]
+    if not onchain_inputs:
+        return
+    if not recheck_inputs:
+        report.add(
+            "inputs.onchain",
+            group,
+            SKIP,
+            f"{len(onchain_inputs)} on-chain input(s) not re-queried (use --recheck-inputs)",
+        )
+        return
+    problems: list[str] = []
+    unavailable = 0
+    for item in onchain_inputs:
+        source = item["source"]
+        if source["chain_id"] != actual_chain:
+            problems.append(f"input {item['name']!r} was read from chain {source['chain_id']}")
+            continue
+        try:
+            result = rpc.eth_call(
+                source["to"], bytes.fromhex(source["data"][2:]), source["block_number"]
+            )
+        except chain.RpcError:
+            unavailable += 1
+            continue
+        if to_hex(result) != source["result"]:
+            problems.append(
+                f"input {item['name']!r}: the call now returns {_short(to_hex(result))} at "
+                f"block {source['block_number']}, the record has {_short(source['result'])}"
+            )
+    if problems:
+        report.add("inputs.onchain", group, FAIL, "; ".join(problems))
+    elif unavailable:
+        report.add(
+            "inputs.onchain",
+            group,
+            SKIP,
+            f"{unavailable} of {len(onchain_inputs)} on-chain input(s) could not be re-queried: "
+            "the RPC no longer serves state at the recorded block",
+        )
+    else:
+        report.add(
+            "inputs.onchain",
+            group,
+            PASS,
+            f"{len(onchain_inputs)} on-chain input(s) re-queried at their recorded blocks; "
+            "all results match",
+        )
+
+
+# ---- Entry point -----------------------------------------------------------
+
+
+def verify(
+    doc: Mapping[str, Any],
+    *,
+    rpc: Any | None = None,
+    uid: str | None = None,
+    policy: PolicyPack | None = None,
+    registry: Registry | None = None,
+    recheck_inputs: bool = False,
+    strict: bool = False,
+) -> Report:
+    """Verify a record envelope (or a bare record body).
+
+    ``rpc`` is any object with ``chain_id()`` and ``eth_call(to, data, block)``;
+    pass ``None`` to verify offline. ``uid`` overrides the attestation UID named
+    in the envelope. With ``strict`` a skipped check counts as a failure.
+    """
+    report = Report(strict=strict)
+    if isinstance(doc, Mapping) and "record" in doc:
+        body = doc["record"]
+        claimed_hash = doc.get("record_hash")
+        envelope_uid = (doc.get("attestation") or {}).get("uid")
+    else:
+        body, claimed_hash, envelope_uid = doc, None, None
+
+    try:
+        validate_record(body)
+    except RecordError as exc:
+        report.add("record.structure", "Record", FAIL, str(exc))
+        return report
+    report.add("record.structure", "Record", PASS, "valid Decision Record v0.1")
+
+    computed = record_hash(body)
+    report.record_hash = to_hex(computed)
+    if claimed_hash is not None and claimed_hash != report.record_hash:
+        report.add(
+            "record.hash",
+            "Record",
+            FAIL,
+            f"the file states hash {_short(str(claimed_hash))} but the record hashes to "
+            f"{_short(report.record_hash)}",
+        )
+    else:
+        report.add("record.hash", "Record", PASS, f"record hash {report.record_hash}")
+
+    report.summary.update(
+        {
+            "deal_id": body["subject"]["deal_id"],
+            "chain_id": body["subject"]["chain_id"],
+            "escrow": body["subject"]["escrow"],
+            "decision": body["decision"]["outcome"],
+            "policy": f"{body['policy']['pack_id']}@{body['policy']['version']}",
+        }
+    )
+
+    problems = input_problems(body)
+    if problems:
+        report.add("record.inputs", "Record", FAIL, "; ".join(problems))
+    else:
+        report.add(
+            "record.inputs",
+            "Record",
+            PASS,
+            f"{len(body['inputs'])} input(s); "
+            "subject and on-chain values follow from their sources",
+        )
+
+    _check_replay(body, report)
+    _check_policy(body, policy, report)
+    _check_registry(body, registry, report)
+
+    attestation_uid = uid or envelope_uid
+    if rpc is None:
+        report.add("chain.network", "On-chain", SKIP, "offline: no RPC endpoint given (--rpc)")
+        return report
+    if not attestation_uid:
+        report.add(
+            "attestation.exists",
+            "On-chain",
+            FAIL,
+            "no attestation UID in the file and none given (--uid)",
+        )
+        return report
+    report.summary["attestation_uid"] = attestation_uid
+    _check_chain(body, computed, rpc, attestation_uid, recheck_inputs, report)
+    return report
