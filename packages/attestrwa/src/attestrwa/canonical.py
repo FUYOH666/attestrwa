@@ -112,7 +112,13 @@ def loads_strict(text: str | bytes) -> Any:
             parse_float=_reject_float,
             parse_constant=_reject_constant,
         )
+    except CanonicalError:
+        raise
     except json.JSONDecodeError as exc:
         raise CanonicalError(f"invalid JSON: {exc}") from exc
     except RecursionError as exc:
         raise CanonicalError("invalid JSON: nested too deeply") from exc
+    except ValueError as exc:
+        # For example an integer literal of thousands of digits, which the
+        # interpreter refuses to convert.
+        raise CanonicalError("invalid JSON: a value cannot be represented") from exc

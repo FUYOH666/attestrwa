@@ -188,3 +188,9 @@ def test_verify_endpoint_refuses_a_deeply_nested_body(client) -> None:
     body = b"[" * 100_000 + b"0" + b"]" * 100_000
     response = client.post("/verify", content=body, headers={"Content-Type": "application/json"})
     assert response.status_code == 422
+
+
+def test_verify_endpoint_refuses_an_integer_too_long_to_read(client) -> None:
+    body = b'{"record": ' + b"1" * 5000 + b"}"
+    response = client.post("/verify", content=body, headers={"Content-Type": "application/json"})
+    assert response.status_code == 422

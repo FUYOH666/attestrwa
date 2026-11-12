@@ -278,3 +278,16 @@ def test_a_deeply_nested_file_is_a_usage_error_not_a_crash(tmp_path, capsys) -> 
     for command in (["verify", str(path)], ["hash", str(path)], ["sign", str(path)]):
         assert main(command) == EXIT_USAGE
     assert "nested too deeply" in capsys.readouterr().err
+
+
+def test_an_integer_too_long_to_read_is_a_usage_error_not_a_crash(workdir, capsys) -> None:
+    envelope = (workdir / "signed.json").read_text(encoding="utf-8")
+    huge = envelope.replace('"record_hash"', '"filler": ' + "1" * 5000 + ', "record_hash"', 1)
+    path = workdir / "huge.json"
+    path.write_text(huge, encoding="utf-8")
+    bare = workdir / "bare.json"
+    bare.write_text("1" * 5000, encoding="ascii")
+    for target in (path, bare):
+        for command in (["verify", str(target)], ["hash", str(target)]):
+            assert main(command) == EXIT_USAGE
+    assert "cannot be represented" in capsys.readouterr().err

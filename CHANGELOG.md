@@ -26,7 +26,7 @@ Decision records for decisions that have no escrow and no chain: the same record
 In code that 2.0.0 already had:
 
 - `decision.code` written as JSON `true` was accepted by the validator, although the specification and the schema require the integer.
-- A deeply nested JSON body made the strict loader raise `RecursionError`: a traceback from the command line and a `500` from `POST /verify`. It is now an invalid record (`422`, exit code 2).
+- A deeply nested JSON body, or one with an integer of thousands of digits, made the strict loader raise: a traceback from the command line and a `500` from `POST /verify`. It is now an invalid record (`422`, exit code 2).
 
 Found by an independent review of this version before release, and fixed:
 
@@ -34,6 +34,7 @@ Found by an independent review of this version before release, and fixed:
 - `attestrwa sign --out` could be pointed at the key file and replace the key with the signed record.
 - An unreadable `--document-dir` raised instead of being reported as a usage error.
 - A stray `signature` member in the envelope of an escrowed deal changed how that deal was checked.
+- A model output containing `NaN` or `Infinity`, which are not JSON, was read as if it were.
 
 ## 2.0.0 — 2026-11-12
 

@@ -190,6 +190,10 @@ def test_a_raised_confidence_is_caught_by_the_model_output(case_pack) -> None:
         b'{"label": 961700, "confidence": 96}',
         b'{"label": "961700", "confidence": 64, "confidence": 96}',
         b'{"label": "961700", "confidence": 96, "extra": {"a": 1, "a": 2}}',
+        b'{"label": "961700", "confidence": 96, "extra": NaN}',
+        b'{"label": "961700", "confidence": 96, "extra": [Infinity]}',
+        b'{"label": "961700", "confidence": 96, "extra": -Infinity}',
+        b'{"label": "961700", "confidence": 96, "extra": ' + b"1" * 5000 + b"}",
         b"[" * 100_000,
     ],
 )

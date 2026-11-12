@@ -272,6 +272,11 @@ def _unambiguous_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _not_json(constant: str) -> Any:
+    """``NaN`` and ``Infinity`` are not JSON, whatever a lenient parser accepts."""
+    raise ValueError(f"{constant} is not JSON")
+
+
 def _field_matches(output: Any, name: str, type_: str, value: Any) -> bool:
     """Does a model output's top-level field hold exactly the recorded value?"""
     if not isinstance(output, dict) or name not in output:
@@ -368,7 +373,9 @@ def _check_files(
             unavailable += 1
             continue
         try:
-            output = json.loads(content, object_pairs_hook=_unambiguous_object)
+            output = json.loads(
+                content, object_pairs_hook=_unambiguous_object, parse_constant=_not_json
+            )
         except (ValueError, RecursionError):
             problems.append(
                 f"input {item['name']!r}: the model output is not JSON, or repeats a member name"
