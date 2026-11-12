@@ -105,6 +105,8 @@ The body is a record file. It is parsed strictly: duplicate keys, floats and inv
 
 The checks are those of `attestrwa verify`, run with this instance's RPC endpoint, policy file and registry file, with on-chain inputs re-queried.
 
+The endpoint vouches only for escrowed deals under this attester's policy. A signed case record (format 0.2) is answered with a report that is not verified: its policy is not this attester's, and the endpoint is not told which signer to trust. Verify such records with the command line, giving the policy, the documents and the public key.
+
 ## GET /attest/healthz
 
 Reports `status` (`ok` or `degraded`), the escrow, EAS and schema UID, the policy and registry identities and hashes, the attester address, and whether the chain id matches, the escrow uses the expected schema and the escrow trusts the attester. It never returns the RPC URL or any key.

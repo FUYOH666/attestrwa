@@ -2,6 +2,39 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org); the record format has its own version, stated in every record.
 
+## 2.1.0 — unreleased
+
+Decision records for decisions that have no escrow and no chain: the same record, signed with a key, with inputs that may come from documents, from the output of an AI model and from a named reviewer. Format 0.1, the contracts, the EAS schema and the attester are unchanged.
+
+### Added
+
+- **Decision Record v0.2** (`spec/DECISION_RECORD_v0.2.md`, `spec/decision-record-0.2.schema.json`). A second subject, `case`, anchored by an Ed25519 signature over the record hash; three source kinds, `document` (a count of documents cited by hash, or a value extracted from one), `model` (a value from a named field of a model output, cited by the hashes of the prompt and of the output) and `human` (a named person's statement). An escrowed deal may also be written as a 0.2 record.
+- **Verifier**: for a signed record, `attestrwa verify --public-key KEY --document FILE --document-dir DIR`. New check groups: Documents (`documents.match`, `model.output`) and Signature (`signature.valid`, `signature.signer`). A record is verified only when the signature is valid and the signer is the key the caller trusts; without a trusted key the result is "consistent and signed". A file the caller names that the record does not cite is a failure.
+- **Command line**: `attestrwa keygen` (the key file is created owner-only and never overwritten), `attestrwa public-key`, `attestrwa sign` (the key is read from `--key-file` or `ATTESTRWA_SIGNING_KEY` and is never printed).
+- **Library**: `build_case_record`, `cited_files`, `attestrwa.signing`; `verify(..., documents=..., public_key=...)`.
+- **Worked example** `examples/ai-classification/`: a customs classification proposed by two models, with a policy, the cited documents, an approving and a rejecting record, and the script that builds and signs them.
+- **Test vectors** `spec/test-vectors/case-approve.json` and `case-reject.json`, signed with the public test key of RFC 8032, which the verifier reports as such.
+- Tests pin the published 0.1 schema and vectors by hash, so a change to a published format cannot go unnoticed.
+
+### Changed
+
+- The check `record.structure` names the version it validated. For an escrowed deal the list of checks and the verdicts are the same as in 2.0.0.
+- `.gitignore`: only the attester's own record store is ignored. The pattern `records/` also matched `examples/records/`, where published records belong.
+
+### Fixed
+
+In code that 2.0.0 already had:
+
+- `decision.code` written as JSON `true` was accepted by the validator, although the specification and the schema require the integer.
+- A deeply nested JSON body made the strict loader raise `RecursionError`: a traceback from the command line and a `500` from `POST /verify`. It is now an invalid record (`422`, exit code 2).
+
+Found by an independent review of this version before release, and fixed:
+
+- A record could name the identity point (or another point of small order) as its public key. No private key exists for it, yet one constant signature then passes for every record. Such keys are now refused in a record, as a signature key and as the trusted key.
+- `attestrwa sign --out` could be pointed at the key file and replace the key with the signed record.
+- An unreadable `--document-dir` raised instead of being reported as a usage error.
+- A stray `signature` member in the envelope of an escrowed deal changed how that deal was checked.
+
 ## 2.0.0 — 2026-11-12
 
 The project is rebuilt around the **decision record**. Version 1 was a hackathon prototype of an escrow gated by an attester; a review of its code and of the market showed that the gate already exists elsewhere, that the missing piece is a verifiable record of *why* a decision was made, and that the prototype's attester trusted its caller. Nothing from version 1 is compatible with version 2.

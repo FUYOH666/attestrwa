@@ -74,13 +74,16 @@ sequenceDiagram
 |---|---|
 | `canonical` | Strict RFC 8785 subset; a JSON loader that refuses duplicate keys and floats. |
 | `policy` | Policy packs, the lexer and parser of the rule language, the typed interpreter. |
-| `record` | Record validation, construction, hashing; checks of inputs against sources and against the policy. |
+| `record` | Record validation, construction, hashing for both format versions; checks of inputs against sources and against the policy. |
 | `eas` | The `SettlementDecision` schema, its UID, encoding and decoding. |
+| `signing` | Ed25519 signatures over record hashes: the anchor of a format 0.2 case. |
 | `rpc` | A minimal JSON-RPC client and decoders for the EAS and escrow views. |
 | `registry` | Payee registry files. |
 | `verify`, `cli` | The verifier and its command line. |
 
 Runtime dependencies: PyYAML and PyCryptodome.
+
+The library serves two profiles with one record and one rule evaluator. An escrowed deal (formats 0.1 and 0.2) is anchored by an EAS attestation and verified against the chain. A case (format 0.2) is a decision with no escrow: it is anchored by a signature, cites its documents and model outputs by hash, and is verified from files and a public key alone. The attester, the escrow and the web UI deal only with the first profile; the second is produced by calling `build_case_record` from the integrator's own pipeline, as [`examples/ai-classification/make_records.py`](../examples/ai-classification/make_records.py) does.
 
 ### Escrow (`contracts/src/SettlementEscrow.sol`)
 
