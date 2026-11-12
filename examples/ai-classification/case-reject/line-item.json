@@ -1,0 +1,10 @@
+{
+  "case_id": "CLS-2026-000413",
+  "importer": "Example Trading Co., Ltd. (fictional)",
+  "description": "Insulated drinking bottle with a built-in wireless loudspeaker in the base and an LED temperature display",
+  "model_number": "SB-700",
+  "quantity": 400,
+  "unit": "pieces",
+  "country_of_origin": "CN",
+  "note": "Synthetic example data. Not a real shipment."
+}

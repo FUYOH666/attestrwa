@@ -1,7 +1,7 @@
 [project]
 name = "attestrwa"
-version = "2.0.0"
-description = "Decision records for compliance-gated settlement: canonical record format, policy rule evaluator, and an independent verifier that checks a record against its on-chain EAS attestation."
+version = "2.1.0"
+description = "Decision records: a canonical record of why a decision was made (policy, inputs and their sources, rule results), anchored by an EAS attestation or an Ed25519 signature, with an independent verifier."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -12,6 +12,7 @@ keywords = [
     "compliance",
     "decision-record",
     "eas",
+    "ed25519",
     "ethereum-attestation-service",
     "policy-as-code",
     "stablecoin",

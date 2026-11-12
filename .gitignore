@@ -9,7 +9,8 @@ credentials.*
 # Local run state: pids, logs, attester record store, chain and deployment state
 .run/
 *.state
-records/
+/records/
+/apps/api/records/
 deployments/anvil-fork.json
 
 # Python

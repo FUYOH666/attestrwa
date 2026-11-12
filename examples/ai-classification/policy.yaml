@@ -1,0 +1,49 @@
+pack_id: customs-classification-demo
+version: "1.0.0"
+description: >
+  Demonstration policy for accepting a tariff classification proposed by an
+  AI model. Synthetic and illustrative only; it is not customs, legal or
+  compliance advice.
+
+# Every name a rule may use, its type and the kind of source it must come
+# from. A record is refused when a value arrives from another kind of source,
+# from another field of the model's output, or from another model.
+inputs:
+  hs_code:
+    type: string
+    source: model             # the code the classifier proposed
+    field: hs_code
+    model: classifier-demo-1
+  confidence_pct:
+    type: int
+    source: model             # the classifier's own confidence, 0 to 100
+    field: confidence_pct
+    model: classifier-demo-1
+  hs_code_check:
+    type: string
+    source: model             # a second, independent model's answer
+    field: hs_code
+    model: classifier-demo-2
+  supporting_documents:
+    type: int
+    source: document          # how many distinct documents describe the goods
+    reading: count
+  customs_value_usd:
+    type: int
+    source: document          # read from the commercial invoice
+    reading: extract
+  reviewer_approved:
+    type: bool
+    source: human             # the sign-off of a named reviewer
+
+rules:
+  - id: models-agree
+    require: hs_code == hs_code_check
+  - id: model-is-confident
+    require: confidence_pct >= 90
+  - id: two-supporting-documents
+    require: supporting_documents >= 2
+  - id: value-within-limit
+    require: customs_value_usd <= 50000
+  - id: reviewer-signed-off
+    require: reviewer_approved == true

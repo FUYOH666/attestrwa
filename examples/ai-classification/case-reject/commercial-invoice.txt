@@ -1,0 +1,13 @@
+COMMERCIAL INVOICE
+(synthetic example, not a real document)
+
+Invoice no.   EX-INV-2026-0413
+Date          2026-11-04
+Seller        Example Housewares Manufacturing Co. (fictional)
+Buyer         Example Trading Co., Ltd. (fictional)
+Incoterms     FOB
+
+Line  Description                                        Qty    Unit price   Amount
+1     Smart bottle with speaker, model SB-700            400    USD 8.00     USD 3,200.00
+
+Total                                                                        USD 3,200.00

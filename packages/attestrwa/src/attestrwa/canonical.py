@@ -114,3 +114,5 @@ def loads_strict(text: str | bytes) -> Any:
         )
     except json.JSONDecodeError as exc:
         raise CanonicalError(f"invalid JSON: {exc}") from exc
+    except RecursionError as exc:
+        raise CanonicalError("invalid JSON: nested too deeply") from exc

@@ -160,3 +160,31 @@ def test_readiness_is_degraded_when_the_escrow_does_not_trust_the_attester(clien
 def test_readiness_is_degraded_when_the_escrow_uses_another_schema(client, chain) -> None:
     chain.escrow_schema = b"\x01" * 32
     assert client.get("/attest/healthz").json()["status"] == "degraded"
+
+
+@pytest.mark.parametrize("name", ["case-approve.json", "case-reject.json"])
+def test_verify_endpoint_does_not_vouch_for_a_signed_case(client, name: str) -> None:
+    """A case (format 0.2) is not this attester's deal: its policy is not ours,
+    and nobody told the endpoint which signer to trust. The answer is a report,
+    never an error and never a confirmation."""
+    from pathlib import Path
+
+    vectors = Path(__file__).resolve().parents[3] / "spec" / "test-vectors"
+    response = client.post(
+        "/verify",
+        content=(vectors / name).read_bytes(),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 200
+    report = response.json()
+    statuses = {check["id"]: check["status"] for check in report["checks"]}
+    assert report["ok"] is False and report["anchored"] is False
+    assert statuses["record.structure"] == "pass"
+    assert statuses["policy.match"] == "fail"
+    assert statuses["signature.signer"] == "skip"
+
+
+def test_verify_endpoint_refuses_a_deeply_nested_body(client) -> None:
+    body = b"[" * 100_000 + b"0" + b"]" * 100_000
+    response = client.post("/verify", content=body, headers={"Content-Type": "application/json"})
+    assert response.status_code == 422

@@ -1,0 +1,160 @@
+{
+  "record": {
+    "spec": "attestrwa.decision-record/0.2",
+    "nonce": "0xfe8165fb9a47fbf5b69bfc8494c4bfac",
+    "supersedes": null,
+    "subject": {
+      "kind": "case",
+      "id": "CLS-2026-000412",
+      "title": "HS classification: stainless steel vacuum bottle VB-500",
+      "digest": "0xa698861c6e4f5e4d44f233cccf40f622fd77887618073a2097035a78707c71aa"
+    },
+    "evaluation": {
+      "evaluated_at": 1794303000
+    },
+    "policy": {
+      "pack_id": "customs-classification-demo",
+      "version": "1.0.0",
+      "sha256": "0x17c6199e0f3da2d58a7d615e39abcca89299c0638a2b538c32040739e76d4897",
+      "uri": "examples/ai-classification/policy.yaml"
+    },
+    "inputs": [
+      {
+        "name": "hs_code",
+        "type": "string",
+        "value": "961700",
+        "source": {
+          "kind": "model",
+          "provider": "example",
+          "model": "classifier-demo-1",
+          "prompt_sha256": "0x7bf785af641bd1ebda6e6783c1559ecbf2a4e862063bdc4cbf177a4eb44bfd5b",
+          "output_sha256": "0x6d5c3b19c5a08829cef027f87e487e466925ddd4665ab7897a40ba15020df516",
+          "field": "hs_code"
+        }
+      },
+      {
+        "name": "confidence_pct",
+        "type": "int",
+        "value": "96",
+        "source": {
+          "kind": "model",
+          "provider": "example",
+          "model": "classifier-demo-1",
+          "prompt_sha256": "0x7bf785af641bd1ebda6e6783c1559ecbf2a4e862063bdc4cbf177a4eb44bfd5b",
+          "output_sha256": "0x6d5c3b19c5a08829cef027f87e487e466925ddd4665ab7897a40ba15020df516",
+          "field": "confidence_pct"
+        }
+      },
+      {
+        "name": "hs_code_check",
+        "type": "string",
+        "value": "961700",
+        "source": {
+          "kind": "model",
+          "provider": "example",
+          "model": "classifier-demo-2",
+          "prompt_sha256": "0x7bf785af641bd1ebda6e6783c1559ecbf2a4e862063bdc4cbf177a4eb44bfd5b",
+          "output_sha256": "0x7b960532b9291d5df363486796b1e5039feda52862450fe42a1a4f295d21ef0a",
+          "field": "hs_code"
+        }
+      },
+      {
+        "name": "supporting_documents",
+        "type": "int",
+        "value": "3",
+        "source": {
+          "kind": "document",
+          "reading": "count",
+          "items": [
+            {
+              "ref": "case-approve/commercial-invoice.txt",
+              "sha256": "0x9eb4e3245b061e598ba4f37c92a2aa92e28124f7a1ef8e1dfffbee5d138d8977"
+            },
+            {
+              "ref": "case-approve/packing-list.txt",
+              "sha256": "0xf25491aa6351263410e1a544ae3ba391a19da29e6b46682668e82f335aacbb5e"
+            },
+            {
+              "ref": "case-approve/product-datasheet.txt",
+              "sha256": "0xcf64769c6c9e937030995d3f65c91b414c3eaddf8aa1b216159a03d2f58b4d2a"
+            }
+          ]
+        }
+      },
+      {
+        "name": "customs_value_usd",
+        "type": "int",
+        "value": "18400",
+        "source": {
+          "kind": "document",
+          "reading": "extract",
+          "items": [
+            {
+              "ref": "case-approve/commercial-invoice.txt",
+              "sha256": "0x9eb4e3245b061e598ba4f37c92a2aa92e28124f7a1ef8e1dfffbee5d138d8977",
+              "locator": "line 'Total'"
+            }
+          ]
+        }
+      },
+      {
+        "name": "reviewer_approved",
+        "type": "bool",
+        "value": true,
+        "source": {
+          "kind": "human",
+          "by": "broker:R-07 (fictional licensed customs broker)",
+          "at": 1794302400
+        }
+      }
+    ],
+    "rules": [
+      {
+        "id": "models-agree",
+        "expression": "hs_code == hs_code_check",
+        "result": true
+      },
+      {
+        "id": "model-is-confident",
+        "expression": "confidence_pct >= 90",
+        "result": true
+      },
+      {
+        "id": "two-supporting-documents",
+        "expression": "supporting_documents >= 2",
+        "result": true
+      },
+      {
+        "id": "value-within-limit",
+        "expression": "customs_value_usd <= 50000",
+        "result": true
+      },
+      {
+        "id": "reviewer-signed-off",
+        "expression": "reviewer_approved == true",
+        "result": true
+      }
+    ],
+    "decision": {
+      "outcome": "approve",
+      "code": 1,
+      "failed_rules": []
+    },
+    "attester": {
+      "public_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "software": "attestrwa-example/ai-classification"
+    },
+    "anchor": {
+      "kind": "signature",
+      "scheme": "ed25519"
+    }
+  },
+  "record_hash": "0x8faf64dfec101f94ca74f5ab7007e059575084c52abba9375a2651e473d45631",
+  "signature": {
+    "scheme": "ed25519",
+    "value": "0x3c3f2c77636a8631d218e74be262afc3103cecff9de36c1ff4b5432fccb2b2933aca9b9466766b6e707b206af5d0db04812b94a252c05bce214e1ada4e7f0808"
+  },
+  "links": {
+    "policy": "examples/ai-classification/policy.yaml"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "case_id": "CLS-2026-000412",
+  "importer": "Example Trading Co., Ltd. (fictional)",
+  "description": "Stainless steel double-wall vacuum insulated bottle, 500 ml, with screw cap",
+  "model_number": "VB-500",
+  "quantity": 4000,
+  "unit": "pieces",
+  "country_of_origin": "CN",
+  "note": "Synthetic example data. Not a real shipment."
+}

@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from attestrwa.eas import DecisionData, encode_decision, schema_uid
-from attestrwa.hashing import to_hex
-from attestrwa.policy import PolicyPack, load_policy
-from attestrwa.record import build_record, make_envelope, record_hash
+from attestrwa.hashing import sha256, to_hex
+from attestrwa.policy import PolicyPack, load_policy, parse_policy
+from attestrwa.record import build_case_record, build_record, make_envelope, record_hash
 from attestrwa.registry import Registry, parse_registry
 from attestrwa.rpc import RpcError, calldata, selector
+from attestrwa.signing import public_key_from_seed, sign_hash
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 POLICY_FILE = REPO_ROOT / "data" / "policies" / "settlement-demo-v2.yaml"
@@ -304,3 +306,171 @@ def chain(approve_body: dict[str, Any]) -> FakeChain:
 
 def clone(value: Any) -> Any:
     return copy.deepcopy(value)
+
+
+# ---- Cases (format 0.2) ----------------------------------------------------
+
+CASE_POLICY = b"""pack_id: case-demo
+version: "1.0.0"
+description: test policy for a decision about some material
+inputs:
+  label:
+    type: string
+    source: model
+    field: label
+    model: model-a
+  confidence:
+    type: int
+    source: model
+    field: confidence
+    model: model-a
+  documents:
+    type: int
+    source: document
+    reading: count
+  value:
+    type: int
+    source: document
+    reading: extract
+  approved:
+    type: bool
+    source: human
+rules:
+  - id: confident
+    require: confidence >= 90
+  - id: two-documents
+    require: documents >= 2
+  - id: value-within-limit
+    require: value <= 50000
+  - id: signed-off
+    require: approved == true
+"""
+
+# Not a secret: a key for tests only.
+CASE_SEED = bytes(range(32))
+CASE_PUBLIC_KEY = to_hex(public_key_from_seed(CASE_SEED))
+OTHER_SEED = bytes(range(32, 64))
+OTHER_PUBLIC_KEY = to_hex(public_key_from_seed(OTHER_SEED))
+CASE_EVALUATED_AT = 1_794_303_000
+
+CASE_FILES: dict[str, bytes] = {
+    "subject.json": b'{"item": "vacuum bottle"}\n',
+    "invoice.txt": b"Invoice\nTotal USD 18,400.00\n",
+    "packing.txt": b"Packing list\n100 cartons\n",
+    "prompt.txt": b"Classify the goods.\n",
+}
+
+
+def model_output(label: str = "961700", confidence: int = 96) -> bytes:
+    return json.dumps({"label": label, "confidence": confidence, "note": 0.5}).encode()
+
+
+def file_hash(content: bytes) -> str:
+    return to_hex(sha256(content))
+
+
+def case_files(confidence: int = 96) -> dict[str, bytes]:
+    """Every file a test case record cites, by name."""
+    return {**CASE_FILES, "output.json": model_output(confidence=confidence)}
+
+
+def make_case_inputs(
+    *,
+    confidence: int = 96,
+    documents: tuple[str, ...] = ("invoice.txt", "packing.txt"),
+    value: str = "18400",
+    approved: bool = True,
+) -> list[dict[str, Any]]:
+    files = case_files(confidence)
+    model = {
+        "kind": "model",
+        "provider": "example",
+        "model": "model-a",
+        "prompt_sha256": file_hash(files["prompt.txt"]),
+        "output_sha256": file_hash(files["output.json"]),
+    }
+    return [
+        {
+            "name": "label",
+            "type": "string",
+            "value": "961700",
+            "source": {**model, "field": "label"},
+        },
+        {
+            "name": "confidence",
+            "type": "int",
+            "value": str(confidence),
+            "source": {**model, "field": "confidence"},
+        },
+        {
+            "name": "documents",
+            "type": "int",
+            "value": str(len(documents)),
+            "source": {
+                "kind": "document",
+                "reading": "count",
+                "items": [{"ref": name, "sha256": file_hash(files[name])} for name in documents],
+            },
+        },
+        {
+            "name": "value",
+            "type": "int",
+            "value": value,
+            "source": {
+                "kind": "document",
+                "reading": "extract",
+                "items": [
+                    {
+                        "ref": "invoice.txt",
+                        "sha256": file_hash(files["invoice.txt"]),
+                        "locator": "Total",
+                    }
+                ],
+            },
+        },
+        {
+            "name": "approved",
+            "type": "bool",
+            "value": approved,
+            "source": {"kind": "human", "by": "reviewer:R-07", "at": CASE_EVALUATED_AT - 600},
+        },
+    ]
+
+
+@pytest.fixture(scope="session")
+def case_pack() -> PolicyPack:
+    return parse_policy(CASE_POLICY)
+
+
+def make_case_body(case_pack: PolicyPack, **inputs: Any) -> dict[str, Any]:
+    return build_case_record(
+        case_id="CASE-0001",
+        title="Classification of a vacuum bottle",
+        digest=file_hash(CASE_FILES["subject.json"]),
+        evaluated_at=CASE_EVALUATED_AT,
+        pack=case_pack,
+        policy_uri="policies/case-demo.yaml",
+        inputs=make_case_inputs(**inputs),
+        public_key=CASE_PUBLIC_KEY,
+        software="attestrwa-tests/0",
+        nonce=NONCE,
+    )
+
+
+def sign_case(body: dict[str, Any], seed: bytes = CASE_SEED) -> dict[str, Any]:
+    """An envelope whose signature is over the body's current hash."""
+    return make_envelope(body, signature=to_hex(sign_hash(seed, record_hash(body))))
+
+
+def supplied(files: dict[str, bytes]) -> list[tuple[str, bytes]]:
+    return list(files.items())
+
+
+@pytest.fixture
+def case_body(case_pack: PolicyPack) -> dict[str, Any]:
+    return make_case_body(case_pack)
+
+
+@pytest.fixture
+def case_envelope(case_body: dict[str, Any]) -> dict[str, Any]:
+    return sign_case(case_body)

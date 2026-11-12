@@ -58,7 +58,11 @@ import yaml
 from attestrwa.hashing import sha256, to_hex
 
 INPUT_TYPES = ("bool", "int", "string")
-SOURCE_KINDS = ("subject", "onchain", "registry", "provider", "declared")
+# Source kinds of record format 0.1, and those format 0.2 adds for decisions
+# made over documents and model outputs with a human sign-off.
+SOURCE_KINDS_V01 = ("subject", "onchain", "registry", "provider", "declared")
+SOURCE_KINDS = (*SOURCE_KINDS_V01, "document", "model", "human")
+DOCUMENT_READINGS = ("count", "extract")
 
 # Members of a record's subject, and those of them that are addresses.
 SUBJECT_FIELDS = (
@@ -418,7 +422,20 @@ def _check_source_params(name: str, type_: str, source: str, params: Mapping[str
         allowed("name")
         if not isinstance(params.get("name"), str) or not params["name"]:
             raise DSLError(f"input {name!r}: 'name' must name the provider")
-    else:
+    elif source == "document":
+        allowed("reading")
+        if params.get("reading") not in DOCUMENT_READINGS:
+            raise DSLError(
+                f"input {name!r}: 'reading' must be one of {', '.join(DOCUMENT_READINGS)}"
+            )
+        if params["reading"] == "count" and type_ != "int":
+            raise DSLError(f"input {name!r}: a count of documents is an int")
+    elif source == "model":
+        allowed("field", "model")
+        for key in ("field", "model"):
+            if key in params and not (isinstance(params[key], str) and params[key]):
+                raise DSLError(f"input {name!r}: {key!r} must be a non-empty string")
+    else:  # human, declared
         allowed()
 
 

@@ -1,0 +1,11 @@
+PACKING LIST
+(synthetic example, not a real document)
+
+Reference     EX-INV-2026-0412
+Shipper       Example Housewares Manufacturing Co. (fictional)
+Consignee     Example Trading Co., Ltd. (fictional)
+
+Cartons       100
+Per carton    40 pieces, model VB-500, stainless steel vacuum insulated bottle 500 ml
+Net weight    1,120 kg
+Gross weight  1,260 kg
