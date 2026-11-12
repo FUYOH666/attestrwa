@@ -2,7 +2,7 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org); the record format has its own version, stated in every record.
 
-## 2.1.0 — unreleased
+## 2.1.0 — 2026-11-12
 
 Decision records for decisions that have no escrow and no chain: the same record, signed with a key, with inputs that may come from documents, from the output of an AI model and from a named reviewer. Format 0.1, the contracts, the EAS schema and the attester are unchanged.
 
