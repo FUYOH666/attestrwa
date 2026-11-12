@@ -28,30 +28,24 @@ from attestrwa.hashing import is_hex, keccak256, to_hex
 from attestrwa.policy import (
     INPUT_TYPES,
     SOURCE_KINDS,
+    SUBJECT_FIELDS,
+    InputSpec,
     PolicyPack,
     Rule,
     Value,
     evaluate_all,
 )
+from attestrwa.rpc import calldata
 
 SPEC_ID = "attestrwa.decision-record/0.1"
 
 SUBJECT_KIND = "escrow_deal"
-SUBJECT_FIELDS = (
-    "chain_id",
-    "escrow",
-    "deal_id",
-    "buyer",
-    "payee",
-    "token",
-    "amount",
-    "deadline",
-    "deposited_at",
-)
 
 _ADDRESS_RE = re.compile(r"0x[0-9a-f]{40}")
-_DECIMAL_RE = re.compile(r"0|[1-9][0-9]*")
-_SIGNED_DECIMAL_RE = re.compile(r"-?(0|[1-9][0-9]*)")
+# At most 78 digits: enough for any uint256, and far below the size at which
+# converting a decimal string becomes expensive.
+_DECIMAL_RE = re.compile(r"0|[1-9][0-9]{0,77}")
+_SIGNED_DECIMAL_RE = re.compile(r"-?(0|[1-9][0-9]{0,77})")
 _NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -96,29 +90,35 @@ def _uint(value: Any, path: str) -> None:
 def _text(value: Any, path: str, *, allow_empty: bool = False) -> None:
     if not isinstance(value, str) or (not value and not allow_empty):
         _fail(path, "must be a non-empty string" if not allow_empty else "must be a string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        _fail(path, "must be valid Unicode")
 
 
 # ---- Sources ---------------------------------------------------------------
 
 
 def _validate_source(source: Any, path: str) -> None:
-    if not isinstance(source, dict) or source.get("kind") not in SOURCE_KINDS:
+    kind = source.get("kind") if isinstance(source, dict) else None
+    if not isinstance(kind, str) or kind not in SOURCE_KINDS:
         _fail(path, f"must be an object whose 'kind' is one of {', '.join(SOURCE_KINDS)}")
-    kind = source["kind"]
     if kind == "subject":
         _obj(source, path, ("kind", "field"))
-        if source["field"] not in SUBJECT_FIELDS:
+        if not isinstance(source["field"], str) or source["field"] not in SUBJECT_FIELDS:
             _fail(f"{path}.field", f"must be one of {', '.join(SUBJECT_FIELDS)}")
     elif kind == "onchain":
         _obj(source, path, ("kind", "chain_id", "to", "call", "data", "block_number", "result"))
         _uint(source["chain_id"], f"{path}.chain_id")
         _address(source["to"], f"{path}.to")
         _text(source["call"], f"{path}.call")
-        if not is_hex(source["data"]) or len(source["data"]) < 10:
-            _fail(f"{path}.data", "must be lowercase hex calldata (selector included)")
+        if not is_hex(source["data"]) or not 10 <= len(source["data"]) <= 2 + 2 * 1024:
+            _fail(
+                f"{path}.data", "must be lowercase hex calldata (selector included, at most 1 KB)"
+            )
         _uint(source["block_number"], f"{path}.block_number")
-        if not is_hex(source["result"]):
-            _fail(f"{path}.result", "must be lowercase hex")
+        if not is_hex(source["result"]) or len(source["result"]) > 2 + 2 * 1024:
+            _fail(f"{path}.result", "must be lowercase hex (at most 1 KB)")
     elif kind == "registry":
         _obj(source, path, ("kind", "ref", "sha256", "key"))
         _text(source["ref"], f"{path}.ref")
@@ -140,14 +140,14 @@ def _validate_input(item: Any, path: str) -> None:
         _fail(f"{path}.name", "must be an identifier")
     type_ = item["type"]
     value = item["value"]
-    if type_ not in INPUT_TYPES:
+    if not isinstance(type_, str) or type_ not in INPUT_TYPES:
         _fail(f"{path}.type", f"must be one of {', '.join(INPUT_TYPES)}")
     if type_ == "bool" and type(value) is not bool:
         _fail(f"{path}.value", "must be true or false for type bool")
     if type_ == "int" and not (isinstance(value, str) and _SIGNED_DECIMAL_RE.fullmatch(value)):
         _fail(f"{path}.value", "must be a decimal string for type int")
-    if type_ == "string" and not isinstance(value, str):
-        _fail(f"{path}.value", "must be a string for type string")
+    if type_ == "string":
+        _text(value, f"{path}.value", allow_empty=True)
     _validate_source(item["source"], f"{path}.source")
 
 
@@ -155,7 +155,20 @@ def _validate_input(item: Any, path: str) -> None:
 
 
 def validate_record(body: Any) -> None:
-    """Check the structure of a record body. Raises :class:`RecordError`."""
+    """Check the structure of a record body. Raises :class:`RecordError`.
+
+    Never raises anything else: a record is untrusted input, and any shape the
+    checks below do not expect is reported as a structural defect.
+    """
+    try:
+        _validate_record(body)
+    except RecordError:
+        raise
+    except (TypeError, KeyError, AttributeError, ValueError, RecursionError) as exc:
+        raise RecordError(f"record: malformed ({type(exc).__name__})") from exc
+
+
+def _validate_record(body: Any) -> None:
     _obj(
         body,
         "record",
@@ -231,7 +244,7 @@ def validate_record(body: Any) -> None:
         seen_rules.add(rule["id"])
 
     decision = _obj(body["decision"], "record.decision", ("outcome", "code", "failed_rules"))
-    if decision["outcome"] not in DECISION_CODES:
+    if not isinstance(decision["outcome"], str) or decision["outcome"] not in DECISION_CODES:
         _fail("record.decision.outcome", "must be 'approve' or 'reject'")
     if decision["code"] != DECISION_CODES[decision["outcome"]]:
         _fail("record.decision.code", "must be 1 for approve and 2 for reject")
@@ -247,6 +260,11 @@ def validate_record(body: Any) -> None:
     anchor = _obj(body["anchor"], "record.anchor", ("kind", "chain_id", "eas", "schema_uid"))
     if anchor["kind"] != "eas":
         _fail("record.anchor.kind", "must be 'eas'")
+    if not (subject["deposited_at"] <= evaluation["evaluated_at"] < subject["deadline"]):
+        _fail(
+            "record.evaluation.evaluated_at",
+            "must lie between the deposit and the deadline of the deal",
+        )
     _uint(anchor["chain_id"], "record.anchor.chain_id")
     _address(anchor["eas"], "record.anchor.eas")
     _bytes32(anchor["schema_uid"], "record.anchor.schema_uid")
@@ -302,8 +320,9 @@ def input_problems(body: Mapping[str, Any]) -> list[str]:
     """Inputs whose recorded value does not follow from their recorded source.
 
     Only sources that are self-contained are checked here: ``subject`` values
-    must equal the subject field, ``onchain`` values must equal the decoded
-    call result. Registry, provider and declared inputs need outside material.
+    must equal the subject field; ``onchain`` values must equal the decoded
+    call result and must have been read on the deal's chain at the evaluation
+    block. Registry, provider and declared inputs need outside material.
     """
     problems: list[str] = []
     for item in body["inputs"]:
@@ -312,6 +331,17 @@ def input_problems(body: Mapping[str, Any]) -> list[str]:
             if source["kind"] == "subject":
                 expected = expected_subject_value(body["subject"], source["field"], item["type"])
             elif source["kind"] == "onchain":
+                # One snapshot: every chain read belongs to the evaluation block.
+                if source["chain_id"] != body["subject"]["chain_id"]:
+                    problems.append(
+                        f"input {item['name']!r} was read from chain {source['chain_id']}, "
+                        f"not the deal's chain {body['subject']['chain_id']}"
+                    )
+                if source["block_number"] != body["evaluation"]["block_number"]:
+                    problems.append(
+                        f"input {item['name']!r} was read at block {source['block_number']}, "
+                        f"not the evaluation block {body['evaluation']['block_number']}"
+                    )
                 expected = expected_onchain_value(source["result"], item["type"])
             else:
                 continue
@@ -344,7 +374,59 @@ def pack_problems(body: Mapping[str, Any], pack: PolicyPack) -> list[str]:
     if recorded_rules != pack_rules:
         problems.append("the record's rules are not the rules of the policy file")
 
-    return problems + input_coverage_problems(body["inputs"], pack)
+    problems += input_coverage_problems(body["inputs"], pack)
+    recorded = {item["name"]: item for item in body["inputs"]}
+    for spec in pack.inputs:
+        item = recorded.get(spec.name)
+        if item is not None and item["source"]["kind"] == spec.source:
+            problems += source_problems(item, spec, body["subject"])
+    return problems
+
+
+def expected_source(spec: InputSpec, subject: Mapping[str, Any]) -> dict[str, Any]:
+    """The source members a policy declaration pins down for a given deal."""
+    params = spec.params
+    if spec.source == "subject":
+        return {"field": params["field"]}
+    if spec.source == "registry":
+        return {"key": subject[params["of"]]}
+    if spec.source == "onchain":
+        expected: dict[str, Any] = {
+            "chain_id": subject["chain_id"],
+            "call": params["call"],
+            "data": to_hex(calldata(params["call"], *(subject[arg] for arg in params["args"]))),
+        }
+        contract = params["contracts"].get(str(subject["chain_id"]))
+        # None means the policy names no contract for this chain: nothing can match.
+        expected["to"] = contract
+        return expected
+    if spec.source == "provider":
+        return {"name": params["name"]}
+    return {}
+
+
+def source_problems(
+    item: Mapping[str, Any], spec: InputSpec, subject: Mapping[str, Any]
+) -> list[str]:
+    """Where a recorded source is not the one the policy declares.
+
+    Without this a record could apply the right rules to the wrong facts: a
+    registry lookup of some other address, a sanctions call about another
+    wallet or to another contract, an amount read from a different field.
+    """
+    problems: list[str] = []
+    for member, wanted in expected_source(spec, subject).items():
+        actual = item["source"].get(member)
+        if wanted is None:
+            problems.append(
+                f"input {spec.name!r}: the policy names no contract for chain {subject['chain_id']}"
+            )
+        elif actual != wanted:
+            problems.append(
+                f"input {spec.name!r}: source {member} is {actual!r}, "
+                f"the policy requires {wanted!r}"
+            )
+    return problems
 
 
 def input_coverage_problems(inputs: Sequence[Mapping[str, Any]], pack: PolicyPack) -> list[str]:

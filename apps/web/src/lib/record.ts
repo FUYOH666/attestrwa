@@ -204,6 +204,23 @@ export async function verifyInBrowser(envelope: Envelope, client: PublicClient):
     `the attester revoked this decision at ${attestation.revocationTime}`,
   );
 
+  const zero = "0x" + "00".repeat(32);
+  add(
+    "attestation.supersedes",
+    "On-chain",
+    same(attestation.refUID, body.supersedes ?? zero),
+    body.supersedes ? `replaces ${short(body.supersedes)}` : "replaces no earlier decision",
+    `the record says it replaces ${short(body.supersedes ?? zero)}, the attestation references ${short(attestation.refUID)}`,
+  );
+  add(
+    "attestation.time",
+    "On-chain",
+    attestation.time >= BigInt(body.subject.deposited_at) &&
+      attestation.time >= BigInt(body.evaluation.evaluated_at),
+    "attested after the deposit and the evaluation",
+    "attested before the deposit or the evaluation it claims",
+  );
+
   const escrow = body.subject.escrow;
   const [deal, escrowEas, escrowSchema, trusted] = await Promise.all([
     client.readContract({address: escrow, abi: escrowAbi, functionName: "getDeal", args: [body.subject.deal_id]}),

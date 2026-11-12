@@ -1,3 +1,5 @@
+import pytest
+
 from attestrwa.verify import FAIL, PASS, SKIP, verify
 
 from .conftest import clone, envelope_for
@@ -141,6 +143,121 @@ def test_rule_with_disallowed_syntax_cannot_be_replayed(approve_body) -> None:
     tampered["rules"][0]["expression"] = "__import__('os').getcwd() == ''"
     report = verify(tampered)
     assert _status(report, "record.replay") == FAIL
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"record": {}, "attestation": "x"},
+        {"record": {}, "attestation": {"uid": 7}},
+        {"record": {}, "record_hash": ["not", "a", "hash"]},
+        {"record": None},
+        {"record": []},
+        {"record": "text"},
+        [],
+        "text",
+        None,
+        7,
+    ],
+)
+def test_malformed_documents_fail_cleanly(document) -> None:
+    report = verify(document)
+    assert not report.ok
+    assert [check.id for check in report.checks] == ["record.structure"]
+
+
+def test_non_hex_uid_argument_fails_cleanly(approve_envelope) -> None:
+    report = verify(approve_envelope, uid="x")
+    assert not report.ok and _status(report, "record.structure") == FAIL
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda b: b["decision"].__setitem__("outcome", ["approve"]),
+        lambda b: b["decision"].__setitem__("outcome", {"a": 1}),
+        lambda b: b["inputs"][0].__setitem__("type", ["bool"]),
+        lambda b: b["inputs"][0]["source"].__setitem__("kind", ["registry"]),
+        lambda b: b["inputs"][3]["source"].__setitem__("field", ["amount"]),
+        lambda b: b["subject"].__setitem__("amount", "9" * 5000),
+        lambda b: b["inputs"][3].__setitem__("value", "9" * 5000),
+        lambda b: b["attester"].__setitem__("software", "lone surrogate \ud800"),
+        lambda b: b["inputs"][4].__setitem__("value", "lone surrogate \ud800"),
+        lambda b: b["rules"][0].__setitem__("id", "\ud800"),
+        lambda b: b.__setitem__("inputs", {"not": "a list"}),
+        lambda b: b.__setitem__("subject", "text"),
+    ],
+)
+def test_hostile_values_inside_a_record_fail_cleanly(approve_body, mutation) -> None:
+    """Untrusted records must never crash the verifier (they become HTTP 500s otherwise)."""
+    tampered = clone(approve_body)
+    mutation(tampered)
+    report = verify(tampered)
+    assert not report.ok
+    assert report.checks[0].id == "record.structure" and report.checks[0].status == FAIL
+
+
+def test_registry_lookup_of_another_address_fails_the_policy_check(approve_body, pack, registry):
+    """Right rules, wrong facts: membership of some other registered address."""
+    tampered = clone(approve_body)
+    tampered["inputs"][0]["source"]["key"] = "0x976ea74026e726554db657fa54763abd0c3a0aa9"
+    report = verify(tampered, policy=pack, registry=registry)
+    assert _status(report, "registry.match") == PASS, "the other address is registered"
+    assert _status(report, "policy.match") == FAIL
+
+
+def test_sanctions_call_about_another_wallet_fails_the_policy_check(approve_body, pack) -> None:
+    tampered = clone(approve_body)
+    data = tampered["inputs"][1]["source"]["data"]
+    tampered["inputs"][1]["source"]["data"] = data[:-40] + "11" * 20
+    report = verify(tampered, policy=pack)
+    assert _status(report, "record.inputs") == PASS
+    assert _status(report, "policy.match") == FAIL
+
+
+def test_sanctions_call_to_another_contract_fails_the_policy_check(approve_body, pack) -> None:
+    tampered = clone(approve_body)
+    tampered["inputs"][1]["source"]["to"] = "0x" + "22" * 20
+    assert _status(verify(tampered, policy=pack), "policy.match") == FAIL
+
+
+def test_amount_read_from_another_subject_field_fails_the_policy_check(approve_body, pack):
+    tampered = clone(approve_body)
+    tampered["inputs"][3]["source"]["field"] = "deadline"
+    tampered["inputs"][3]["value"] = str(tampered["subject"]["deadline"])
+    report = verify(tampered, policy=pack)
+    assert _status(report, "record.inputs") == PASS
+    assert _status(report, "policy.match") == FAIL
+
+
+def test_chain_read_from_another_block_breaks_the_snapshot(approve_body) -> None:
+    tampered = clone(approve_body)
+    tampered["inputs"][1]["source"]["block_number"] -= 1000
+    assert _status(verify(tampered), "record.inputs") == FAIL
+
+
+def test_chain_read_from_another_chain_breaks_the_snapshot(approve_body) -> None:
+    tampered = clone(approve_body)
+    tampered["inputs"][2]["source"]["chain_id"] = 1
+    assert _status(verify(tampered), "record.inputs") == FAIL
+
+
+@pytest.mark.parametrize("offset", [-1, 86_400, 10**9])
+def test_evaluation_outside_the_life_of_the_deal_is_rejected(approve_body, offset) -> None:
+    tampered = clone(approve_body)
+    tampered["evaluation"]["evaluated_at"] = tampered["subject"]["deposited_at"] + offset
+    report = verify(tampered)
+    assert _status(report, "record.structure") == FAIL
+
+
+def test_registry_other_than_the_one_the_policy_names_fails(approve_envelope, pack) -> None:
+    from attestrwa.registry import parse_registry
+
+    from .conftest import REGISTRY_FILE
+
+    other = parse_registry(REGISTRY_FILE.read_bytes().replace(b"demo-payees", b"other-payees"))
+    report = verify(approve_envelope, policy=pack, registry=other)
+    assert _status(report, "registry.match") == FAIL
 
 
 def test_report_serialises(approve_envelope) -> None:

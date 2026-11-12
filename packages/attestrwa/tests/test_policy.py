@@ -17,8 +17,8 @@ GOOD_POLICY = b"""
 pack_id: test-pack
 version: "1.0.0"
 inputs:
-  payee_verified: {type: bool, source: registry}
-  capital_class:  {type: int,  source: provider}
+  payee_verified: {type: bool, source: registry, registry_id: payees, of: payee}
+  capital_class:  {type: int,  source: provider, name: screening}
 rules:
   - id: payee-must-match
     require: payee_verified == true
@@ -187,6 +187,81 @@ def test_expression_semantics(expression: str, context: dict, expected: bool) ->
 def test_disallowed_or_malformed_expressions_raise(expression: str) -> None:
     with pytest.raises(DSLError):
         evaluate_rule(_rule(expression), {"x": 1, "y": 2})
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "0x10 == 16",
+        "0o7 == 7",
+        "0b1 == 1",
+        "1_000 == 1000",
+        "01 == 1",
+        "1e3 == 1000",
+        "x == 1.",
+        '"a" "b" == "ab"',
+        "x == 'a'",
+        'x == "a\\x41"',
+        'x == r"a"',
+        'x == b"a"',
+        'x == """a"""',
+        "x == 1 # comment",
+        "x == 1\nor x == 2",
+        "x == 1 if x else 2",
+        "x == None",
+        "x == True",
+        "x == 1 in y",
+        "x == 1 & 1",
+        "x == 1 | 1",
+        "x == ~1",
+        "x == 1 ; 2",
+        "x == $y",
+        "x == 1\x00",
+    ],
+)
+def test_python_syntax_outside_the_published_grammar_is_rejected(expression: str) -> None:
+    """The language is its grammar, not 'whatever Python parses'."""
+    with pytest.raises(DSLError):
+        evaluate_rule(_rule(expression), {"x": 1, "y": 2})
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "x: {type: int, source: subject}",
+        "x: {type: int, source: subject, field: nonsense}",
+        "x: {type: bool, source: subject, field: amount}",
+        "x: {type: int, source: subject, field: amount, extra: 1}",
+        "x: {type: bool, source: onchain}",
+        "x: {type: bool, source: onchain, call: 'f(uint256)', args: [payee], contracts: {'1': '0x"
+        + "ab" * 20
+        + "'}}",
+        "x: {type: bool, source: onchain, call: 'f(address)', args: [], contracts: {'1': '0x"
+        + "ab" * 20
+        + "'}}",
+        "x: {type: bool, source: onchain, call: 'f(address)', args: [amount], contracts: {'1': '0x"
+        + "ab" * 20
+        + "'}}",
+        "x: {type: bool, source: onchain, call: 'f(address)', args: [payee]}",
+        "x: {type: bool, source: onchain, call: 'f(address)', args: [payee], contracts: {'1': '0x"
+        + "AB" * 20
+        + "'}}",
+        "x: {type: bool, source: onchain, call: 'f(address)', args: [payee], contracts: {1: '0x"
+        + "ab" * 20
+        + "'}}",
+        "x: {type: string, source: onchain, call: 'f(address)', args: [payee], contracts: {'1': '0x"
+        + "ab" * 20
+        + "'}}",
+        "x: {type: bool, source: registry, of: payee}",
+        "x: {type: bool, source: registry, registry_id: r, of: amount}",
+        "x: {type: int, source: registry, registry_id: r, of: payee}",
+        "x: {type: int, source: provider}",
+        "x: {type: int, source: declared, by: someone}",
+    ],
+)
+def test_input_declarations_must_say_exactly_what_the_source_is(declaration: str) -> None:
+    with pytest.raises(DSLError):
+        parse_policy(_policy("  - id: a\n    require: x == 1\n", inputs=declaration))
 
 
 def test_a_hand_built_rule_cannot_reach_python() -> None:

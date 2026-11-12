@@ -280,7 +280,7 @@ def test_unreadable_screening_source_makes_no_decision(client, chain) -> None:
     response = attest(client, deal_id)
 
     assert response.status_code == 502
-    assert "sanctions oracle" in response.json()["detail"]
+    assert "on-chain read failed" in response.json()["detail"]
     assert chain.attestations == {}
     assert client.get(f"/records/{deal_id}").status_code == 404
 

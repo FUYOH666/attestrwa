@@ -79,6 +79,7 @@ class FakeChain:
         self.escrow_schema = schema_uid()
         self.oracle_down = False
         self.attest_down = False
+        self.block_times: dict[int, int] = {self.number: self.timestamp}
         self._salt = itertools.count(1)
 
     # ---- test helpers ----
@@ -107,6 +108,7 @@ class FakeChain:
     def advance(self, seconds: int = 2) -> None:
         self.number += 1
         self.timestamp += seconds
+        self.block_times[self.number] = self.timestamp
 
     def revoke(self, uid: str) -> None:
         self.attestations[uid]["revocation_time"] = self.timestamp
@@ -118,6 +120,10 @@ class FakeChain:
         return self.chain
 
     def block(self, tag: int | str = "latest") -> tuple[int, int]:
+        if isinstance(tag, int):
+            if tag not in self.block_times:
+                raise RpcError("eth_getBlockByNumber failed: unknown block")
+            return tag, self.block_times[tag]
         return self.number, self.timestamp
 
     def balance(self, address: str) -> int:
@@ -207,7 +213,6 @@ def settings(tmp_path: Path) -> Settings:
         network="test",
         eas_address=EAS,
         escrow_address=ESCROW,
-        sanctions_oracle=ORACLE,
         policy_file=POLICY_FILE,
         registry_file=REGISTRY_FILE,
         records_dir=str(tmp_path / "records"),

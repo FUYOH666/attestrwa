@@ -16,8 +16,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from attestrwa import rpc as chain
+from attestrwa.canonical import CanonicalError
 from attestrwa.eas import DECISION_CODES, DecisionDataError, decode_decision, schema_uid
-from attestrwa.hashing import to_hex
+from attestrwa.hashing import is_hex, to_hex
 from attestrwa.policy import DSLError, PolicyPack, Rule, evaluate_rule, names_in
 from attestrwa.record import (
     RecordError,
@@ -174,7 +175,9 @@ def _check_policy(body: Mapping[str, Any], pack: PolicyPack | None, report: Repo
         )
 
 
-def _check_registry(body: Mapping[str, Any], registry: Registry | None, report: Report) -> None:
+def _check_registry(
+    body: Mapping[str, Any], registry: Registry | None, pack: PolicyPack | None, report: Report
+) -> None:
     items = [item for item in body["inputs"] if item["source"]["kind"] == "registry"]
     if not items:
         return
@@ -187,6 +190,14 @@ def _check_registry(body: Mapping[str, Any], registry: Registry | None, report: 
         )
         return
     problems: list[str] = []
+    if pack is not None:
+        for spec in pack.inputs:
+            wanted = spec.params.get("registry_id") if spec.source == "registry" else None
+            if wanted is not None and wanted != registry.registry_id:
+                problems.append(
+                    f"input {spec.name!r}: the policy requires registry {wanted!r}, "
+                    f"the file is {registry.registry_id!r}"
+                )
     for item in items:
         source = item["source"]
         if source["sha256"] != registry.sha256:
@@ -378,15 +389,71 @@ def _check_chain(
     else:
         report.add("attestation.not_revoked", group, PASS, "not revoked")
 
-    if attestation.time >= subject["deposited_at"]:
-        report.add("attestation.time", group, PASS, "attested after the deposit it refers to")
-    else:
+    evaluated_at = body["evaluation"]["evaluated_at"]
+    if attestation.time < subject["deposited_at"]:
         report.add(
             "attestation.time",
             group,
             FAIL,
             f"attested at {attestation.time}, before the deposit at {subject['deposited_at']}",
         )
+    elif attestation.time < evaluated_at:
+        report.add(
+            "attestation.time",
+            group,
+            FAIL,
+            f"attested at {attestation.time}, before the evaluation it claims at {evaluated_at}",
+        )
+    else:
+        report.add("attestation.time", group, PASS, "attested after the deposit and the evaluation")
+
+    zero = "0x" + "00" * 32
+    claimed = body["supersedes"] or zero
+    referenced = to_hex(attestation.ref_uid)
+    if referenced == claimed:
+        report.add(
+            "attestation.supersedes",
+            group,
+            PASS,
+            "replaces no earlier decision"
+            if claimed == zero
+            else f"replaces {_short(claimed)}, as the attestation's refUID also says",
+        )
+    else:
+        report.add(
+            "attestation.supersedes",
+            group,
+            FAIL,
+            f"the record says it replaces {_short(claimed)}, "
+            f"the attestation references {_short(referenced)}",
+        )
+
+    block_number = body["evaluation"]["block_number"]
+    try:
+        _, block_time = rpc.block(block_number)
+    except chain.RpcError:
+        report.add(
+            "evaluation.block",
+            group,
+            SKIP,
+            f"the RPC no longer serves block {block_number}; its timestamp was not compared",
+        )
+    else:
+        if block_time == evaluated_at:
+            report.add(
+                "evaluation.block",
+                group,
+                PASS,
+                f"evaluation time is the timestamp of block {block_number}",
+            )
+        else:
+            report.add(
+                "evaluation.block",
+                group,
+                FAIL,
+                f"block {block_number} has timestamp {block_time}, "
+                f"the record says it was evaluated at {evaluated_at}",
+            )
 
     escrow = subject["escrow"]
     escrow_eas = chain.read_escrow_eas(rpc, escrow)
@@ -508,7 +575,8 @@ def verify(
 ) -> Report:
     """Verify a record envelope (or a bare record body).
 
-    ``rpc`` is any object with ``chain_id()`` and ``eth_call(to, data, block)``;
+    ``rpc`` is any object with ``chain_id()``, ``block(number)`` and
+    ``eth_call(to, data, block)``;
     pass ``None`` to verify offline. ``uid`` overrides the attestation UID named
     in the envelope. With ``strict`` a skipped check counts as a failure.
     """
@@ -516,18 +584,37 @@ def verify(
     if isinstance(doc, Mapping) and "record" in doc:
         body = doc["record"]
         claimed_hash = doc.get("record_hash")
-        envelope_uid = (doc.get("attestation") or {}).get("uid")
+        attestation_member = doc.get("attestation")
+        envelope_uid = None
+        if attestation_member is not None:
+            envelope_uid = (
+                attestation_member.get("uid") if isinstance(attestation_member, Mapping) else None
+            )
+            if not is_hex(envelope_uid, 32):
+                report.add(
+                    "record.structure",
+                    "Record",
+                    FAIL,
+                    "attestation: must be null or an object whose 'uid' is 32-byte hex",
+                )
+                return report
+        if claimed_hash is not None and not is_hex(claimed_hash, 32):
+            report.add("record.structure", "Record", FAIL, "record_hash: must be 32-byte hex")
+            return report
     else:
         body, claimed_hash, envelope_uid = doc, None, None
+    if uid is not None and not is_hex(uid, 32):
+        report.add("record.structure", "Record", FAIL, "the given UID is not 32-byte hex")
+        return report
 
     try:
         validate_record(body)
-    except RecordError as exc:
+        computed = record_hash(body)
+    except (RecordError, CanonicalError) as exc:
         report.add("record.structure", "Record", FAIL, str(exc))
         return report
     report.add("record.structure", "Record", PASS, "valid Decision Record v0.1")
 
-    computed = record_hash(body)
     report.record_hash = to_hex(computed)
     if claimed_hash is not None and claimed_hash != report.record_hash:
         report.add(
@@ -564,7 +651,7 @@ def verify(
 
     _check_replay(body, report)
     _check_policy(body, policy, report)
-    _check_registry(body, registry, report)
+    _check_registry(body, registry, policy, report)
 
     attestation_uid = uid or envelope_uid
     if rpc is None:

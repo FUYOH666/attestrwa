@@ -9,7 +9,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Request
+from attestrwa.canonical import CanonicalError, loads_strict
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -23,6 +25,7 @@ from app.service import AttesterService
 logger = logging.getLogger(__name__)
 
 _BYTES32_RE = re.compile(r"0x[0-9a-fA-F]{64}")
+MAX_RECORD_BYTES = 256 * 1024
 _service: AttesterService | None = None
 _service_lock = threading.Lock()
 
@@ -154,9 +157,20 @@ def get_record(deal_id: str, service: AttesterService = Depends(get_service)) ->
 
 
 @app.post("/verify")
-def verify_record(
-    document: dict[str, Any] = Body(...), service: AttesterService = Depends(get_service)
+async def verify_record(
+    request: Request, service: AttesterService = Depends(get_service)
 ) -> dict[str, Any]:
     """Run the independent verifier on a record, against this attester's chain,
-    policy file and registry file. The same checks as ``attestrwa verify``."""
-    return service.verify(document)
+    policy file and registry file. The same checks as ``attestrwa verify``.
+
+    The body is parsed strictly: a record with duplicate keys or floats is
+    ambiguous and is refused, exactly as the command line tool refuses it.
+    """
+    raw = await request.body()
+    if len(raw) > MAX_RECORD_BYTES:
+        raise HTTPException(status_code=413, detail="record is larger than 256 KB")
+    try:
+        document = loads_strict(raw)
+    except CanonicalError as exc:
+        raise HTTPException(status_code=422, detail=f"not a decision record: {exc}") from exc
+    return await run_in_threadpool(service.verify, document)

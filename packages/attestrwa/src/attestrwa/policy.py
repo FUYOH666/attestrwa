@@ -3,17 +3,25 @@
 A policy pack is a YAML file::
 
     pack_id: settlement-demo
-    version: 2.0.0
+    version: "2.0.0"
     inputs:
-      payee_registered: {type: bool, source: registry, provider: payee_registry, of: payee}
-      amount:           {type: int,  source: subject,  field: amount}
+      payee_registered: {type: bool, source: registry, registry_id: demo-payees, of: payee}
+      payee_sanctioned:
+        type: bool
+        source: onchain
+        call: isSanctioned(address)
+        args: [payee]
+        contracts: {"84532": "0x40c5..."}
+      amount: {type: int, source: subject, field: amount}
     rules:
       - id: payee-is-registered
         require: payee_registered == true
 
-``inputs`` declares every name a rule may use, its type and the *kind of
-source* it must come from. ``rules`` is an ordered list of boolean
-expressions; a settlement is approved if and only if every rule holds.
+``inputs`` declares every name a rule may use, its type, the *kind of
+source* it must come from and what exactly that source is (which subject
+field, which contract call about which party, which registry). ``rules`` is
+an ordered list of boolean expressions; a settlement is approved if and only
+if every rule holds.
 
 The rule language is deliberately tiny so it can be re-implemented in any
 language from the grammar in ``spec/DECISION_RECORD_v0.1.md``:
@@ -25,14 +33,21 @@ language from the grammar in ``spec/DECISION_RECORD_v0.1.md``:
     comparison := operand (("==" | "!=" | "<" | "<=" | ">" | ">=") operand)?
     operand    := NAME | INT | STRING | "true" | "false" | "(" expr ")"
 
-Python's ``ast`` module is used only as a parser. Expressions are checked
-against a whitelist and then run by the small interpreter below; nothing is
-ever passed to ``eval``.
+    NAME   := [A-Za-z_][A-Za-z0-9_]*
+    INT    := "-"? ("0" | [1-9][0-9]*)
+    STRING := '"' (any character except '"', backslash and newline)* '"'
+
+Expressions are first checked token by token against exactly these lexical
+forms, then parsed with Python's ``ast`` module (used only as a parser),
+checked against a node whitelist, and run by the small interpreter below.
+Nothing is ever passed to ``eval``.
 """
 
 from __future__ import annotations
 
 import ast
+import keyword
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,6 +59,38 @@ from attestrwa.hashing import sha256, to_hex
 
 INPUT_TYPES = ("bool", "int", "string")
 SOURCE_KINDS = ("subject", "onchain", "registry", "provider", "declared")
+
+# Members of a record's subject, and those of them that are addresses.
+SUBJECT_FIELDS = (
+    "chain_id",
+    "escrow",
+    "deal_id",
+    "buyer",
+    "payee",
+    "token",
+    "amount",
+    "deadline",
+    "deposited_at",
+)
+ADDRESS_FIELDS = ("escrow", "buyer", "payee", "token")
+
+_ADDRESS_RE = re.compile(r"0x[0-9a-f]{40}")
+_CALL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\((address(,address)*)?\)")
+
+# The lexical forms of the rule language. Anything Python would accept beyond
+# these (hex or underscored numbers, string prefixes and escapes, implicit
+# string concatenation) is rejected before parsing.
+_TOKEN_RE = re.compile(
+    r"""
+      (?P<space>[ \t]+)
+    | (?P<name>[A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])
+    | (?P<int>0|[1-9][0-9]*)(?![A-Za-z0-9_.])
+    | (?P<string>"[^"\\\n]*")
+    | (?P<op>==|!=|<=|>=|<|>|\(|\)|-)
+    """,
+    re.VERBOSE,
+)
+_WORD_OPERATORS = frozenset({"and", "or", "not"})
 
 MAX_POLICY_BYTES = 256 * 1024
 MAX_RULES = 200
@@ -162,12 +209,37 @@ def _validate_ast(tree: ast.AST) -> None:
                 raise DSLError("unary minus is only allowed on integer literals")
 
 
+def _check_tokens(expression: str) -> None:
+    """Reject anything that is not one of the language's lexical forms."""
+    position = 0
+    previous = None
+    while position < len(expression):
+        match = _TOKEN_RE.match(expression, position)
+        if match is None:
+            raise DSLError(
+                f"unexpected character {expression[position]!r} at position {position} "
+                f"in rule expression {expression!r}"
+            )
+        kind = match.lastgroup
+        position = match.end()
+        if kind == "space":
+            continue
+        if kind == "name":
+            word = match.group("name")
+            if keyword.iskeyword(word) and word not in _WORD_OPERATORS:
+                raise DSLError(f"{word!r} is not part of the rule language")
+        if kind == "string" and previous == "string":
+            raise DSLError("adjacent string literals are not allowed")
+        previous = kind
+
+
 def parse_expression(expression: str) -> ast.Expression:
     """Parse and whitelist one rule expression."""
     if not isinstance(expression, str) or not expression.strip():
         raise DSLError("rule expression must be a non-empty string")
     if len(expression) > MAX_EXPRESSION_CHARS:
         raise DSLError(f"rule expression is longer than {MAX_EXPRESSION_CHARS} characters")
+    _check_tokens(expression.strip())
     try:
         tree = ast.parse(expression.strip(), mode="eval")
     except (SyntaxError, ValueError, RecursionError) as exc:
@@ -285,8 +357,69 @@ def _parse_inputs(raw: Any) -> tuple[InputSpec, ...]:
         if source not in SOURCE_KINDS:
             raise DSLError(f"input {name!r}: source must be one of {', '.join(SOURCE_KINDS)}")
         params = {k: v for k, v in decl.items() if k not in ("type", "source")}
+        _check_source_params(name, type_, source, params)
         specs.append(InputSpec(name=name, type=type_, source=source, params=params))
     return tuple(specs)
+
+
+def _check_source_params(name: str, type_: str, source: str, params: Mapping[str, Any]) -> None:
+    """A declaration must say exactly what its source is, so a verifier can check it."""
+
+    def allowed(*keys: str) -> None:
+        extra = sorted(set(params) - set(keys))
+        if extra:
+            raise DSLError(f"input {name!r}: unexpected key(s) {', '.join(extra)}")
+
+    if source == "subject":
+        allowed("field")
+        if params.get("field") not in SUBJECT_FIELDS:
+            raise DSLError(f"input {name!r}: 'field' must be one of {', '.join(SUBJECT_FIELDS)}")
+        if type_ == "bool":
+            raise DSLError(f"input {name!r}: a subject field cannot be read as bool")
+    elif source == "onchain":
+        allowed("call", "args", "contracts")
+        call = params.get("call")
+        args = params.get("args")
+        contracts = params.get("contracts")
+        if not isinstance(call, str) or not _CALL_RE.fullmatch(call):
+            raise DSLError(
+                f"input {name!r}: 'call' must be a signature taking only addresses, "
+                "for example isSanctioned(address)"
+            )
+        arity = 0 if call.endswith("()") else call.count(",") + 1
+        if (
+            not isinstance(args, list)
+            or len(args) != arity
+            or any(arg not in ADDRESS_FIELDS for arg in args)
+        ):
+            raise DSLError(
+                f"input {name!r}: 'args' must list {arity} of {', '.join(ADDRESS_FIELDS)}"
+            )
+        if not isinstance(contracts, dict) or not contracts:
+            raise DSLError(f"input {name!r}: 'contracts' must map a chain id to a contract address")
+        for chain, address in contracts.items():
+            if not (isinstance(chain, str) and chain.isdigit()):
+                raise DSLError(f"input {name!r}: chain ids in 'contracts' must be quoted numbers")
+            if not isinstance(address, str) or not _ADDRESS_RE.fullmatch(address):
+                raise DSLError(
+                    f"input {name!r}: contract for chain {chain} must be a lowercase address"
+                )
+        if type_ == "string":
+            raise DSLError(f"input {name!r}: an on-chain word cannot be read as string")
+    elif source == "registry":
+        allowed("registry_id", "of")
+        if not isinstance(params.get("registry_id"), str) or not params["registry_id"]:
+            raise DSLError(f"input {name!r}: 'registry_id' must name the registry")
+        if params.get("of") not in ADDRESS_FIELDS:
+            raise DSLError(f"input {name!r}: 'of' must be one of {', '.join(ADDRESS_FIELDS)}")
+        if type_ != "bool":
+            raise DSLError(f"input {name!r}: registry membership is a bool")
+    elif source == "provider":
+        allowed("name")
+        if not isinstance(params.get("name"), str) or not params["name"]:
+            raise DSLError(f"input {name!r}: 'name' must name the provider")
+    else:
+        allowed()
 
 
 def _parse_rules(raw: Any, declared: set[str]) -> tuple[Rule, ...]:

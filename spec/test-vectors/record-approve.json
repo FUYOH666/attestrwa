@@ -22,7 +22,7 @@
     "policy": {
       "pack_id": "settlement-demo",
       "version": "2.0.0",
-      "sha256": "0x44895d5f36e448b8eaf373ade695d9660a3dfdc1296e007c0d4729773c055db9",
+      "sha256": "0x37d3c037ec8b748dfd36f230f2df68d9f154aa6c6ea32f2445d43592c164c71a",
       "uri": "data/policies/settlement-demo-v2.yaml"
     },
     "inputs": [
@@ -127,7 +127,7 @@
       "schema_uid": "0x1a86145e70ac5055683604a56201574b2c9edf0512ad08fc1368a9e7cb565135"
     }
   },
-  "record_hash": "0xe3947c4f3182d6301f0501136c89dede9f3e45003f614f99f2927a4d44497935",
+  "record_hash": "0x86933a67016484b419f98d9beb7af27097272ecdb155812a1437cae4873e324b",
   "network": "test-vector",
   "attestation": null,
   "links": {}

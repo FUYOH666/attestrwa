@@ -245,6 +245,25 @@ def test_build_refuses_missing_or_extra_inputs(pack, registry) -> None:
         build_record(inputs=make_inputs(registry)[:-1], **common)
 
 
+def test_build_refuses_a_source_other_than_the_one_the_policy_declares(pack, registry) -> None:
+    """The attester itself cannot record a lookup of the wrong party."""
+    body = make_body(pack, registry)
+    subject = {key: body["subject"][key] for key in body["subject"] if key != "kind"}
+    inputs = make_inputs(registry)
+    inputs[0]["source"]["key"] = BUYER
+    with pytest.raises(RecordError, match="source key"):
+        build_record(
+            subject=subject,
+            evaluation=body["evaluation"],
+            pack=pack,
+            policy_uri="",
+            inputs=inputs,
+            attester_address=body["attester"]["address"],
+            software="x",
+            anchor=body["anchor"],
+        )
+
+
 def test_pack_problems_detects_a_different_policy(approve_body, strict_pack) -> None:
     problems = pack_problems(approve_body, strict_pack)
     assert any("policy hash differs" in p for p in problems)

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+<rect width="1280" height="640" fill="#0D1117"/>
+<g transform="translate(120 160)"><g transform="scale(2.0)"><rect width="120" height="120" rx="30" fill="#161B22" stroke="#30363D" stroke-width="2"/><rect x="24" y="30" width="72" height="10" rx="5" fill="#34D399" opacity="1.0"/><rect x="24" y="52" width="56" height="10" rx="5" fill="#34D399" opacity="0.55"/><rect x="24" y="74" width="36" height="10" rx="5" fill="#34D399" opacity="0.3"/><circle cx="84" cy="84" r="21" fill="#34D399"/><path d="M74 84 l7 7 l13 -14" fill="none" stroke="#161B22" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+<text x="420" y="250" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="92" fill="#F0F6FC" font-weight="700" letter-spacing="-2">AttestRWA</text>
+<text x="424" y="312" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="32" fill="#9DA7B3">Prove why a settlement was allowed.</text>
+<text x="424" y="356" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="32" fill="#9DA7B3">Decision records anchored on-chain with EAS</text>
+<rect x="120" y="470" width="1040" height="2" fill="#30363D"/>
+<text x="120" y="534" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" fill="#9DA7B3">Decision Record v0.1 · verifier CLI · escrow · EAS on Base · Apache-2.0</text>
+</svg>

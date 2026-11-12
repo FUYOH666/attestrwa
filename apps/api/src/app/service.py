@@ -72,7 +72,6 @@ class AttesterService:
         self.registry = registry
         self.escrow = settings.escrow_address.lower()
         self.eas = settings.eas_address.lower()
-        self.oracle = settings.sanctions_oracle.lower()
         self.schema_uid = schema_uid()
         # One decision at a time keeps "one live decision per deal" race-free.
         self._lock = threading.Lock()
@@ -179,7 +178,6 @@ class AttesterService:
             declared=declared,
             declared_by=f"integrator:{caller}",
             rpc=self.rpc,
-            oracle=self.oracle,
             registry=self.registry,
             registry_ref=self.settings.registry_file,
         )

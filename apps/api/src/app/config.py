@@ -8,10 +8,6 @@ from attestrwa.eas import EAS_PREDEPLOY
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Chainalysis sanctions oracle on Base Sepolia. On Base mainnet it lives at
-# 0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B.
-SANCTIONS_ORACLE_BASE_SEPOLIA = "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -24,7 +20,6 @@ class Settings(BaseSettings):
     network: str = "anvil-fork"
     eas_address: str = EAS_PREDEPLOY
     escrow_address: str = ""
-    sanctions_oracle: str = SANCTIONS_ORACLE_BASE_SEPOLIA
 
     # --- attester ---
     attester_private_key: str = Field(default="", repr=False)

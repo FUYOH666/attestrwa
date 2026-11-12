@@ -9,18 +9,24 @@ inputs:
   payee_registered:
     type: bool
     source: registry
-    provider: payee_registry
+    registry_id: demo-payees
     of: payee
   payee_sanctioned:
     type: bool
     source: onchain
-    provider: sanctions_oracle
-    of: payee
+    call: isSanctioned(address)
+    args: [payee]
+    contracts:
+      "84532": "0x40c57923924b5c5c5455c48d93317139addac8fb"
+      "8453": "0x3a91a31cb3dc49b4db9ce721f50a9d076c8d739b"
   buyer_sanctioned:
     type: bool
     source: onchain
-    provider: sanctions_oracle
-    of: buyer
+    call: isSanctioned(address)
+    args: [buyer]
+    contracts:
+      "84532": "0x40c57923924b5c5c5455c48d93317139addac8fb"
+      "8453": "0x3a91a31cb3dc49b4db9ce721f50a9d076c8d739b"
   amount:
     type: int
     source: subject

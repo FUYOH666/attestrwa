@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import copy
+import json
+
+import pytest
 
 from .conftest import ATTESTER, ESCROW, IMPOSTOR, attest
 
@@ -91,6 +94,48 @@ def test_verify_endpoint_handles_garbage(client) -> None:
     report = client.post("/verify", json={"record": {"spec": "nope"}}).json()
     assert report["ok"] is False
     assert [check["id"] for check in report["checks"]] == ["record.structure"]
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"record": {}, "attestation": "x"},
+        {"record": {"decision": {"outcome": ["approve"]}}},
+        {"record": None, "record_hash": 7},
+        [],
+        "text",
+    ],
+)
+def test_verify_endpoint_never_answers_500_on_malformed_documents(client, document) -> None:
+    response = client.post("/verify", json=document)
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+
+
+def test_verify_endpoint_refuses_duplicate_keys(client, chain) -> None:
+    """An HTTP parser would keep the last duplicate; the record would be ambiguous."""
+    envelope = attest(client, chain.open_deal()).json()["envelope"]
+    text = json.dumps(envelope).replace(
+        '"outcome": "approve"', '"outcome": "reject", "outcome": "approve"', 1
+    )
+    assert '"outcome": "reject", "outcome": "approve"' in text
+
+    response = client.post("/verify", content=text, headers={"Content-Type": "application/json"})
+    assert response.status_code == 422
+    assert "duplicate" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("body", [b"{not json", b'{"record": {"x": 1.5}}', b"\xff\xfe"])
+def test_verify_endpoint_refuses_unparseable_bodies(client, body: bytes) -> None:
+    response = client.post("/verify", content=body, headers={"Content-Type": "application/json"})
+    assert response.status_code == 422
+
+
+def test_verify_endpoint_refuses_oversized_bodies(client) -> None:
+    response = client.post(
+        "/verify", content=b" " * (256 * 1024 + 1), headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 413
 
 
 def test_readiness_reports_wiring(client, chain, service) -> None:

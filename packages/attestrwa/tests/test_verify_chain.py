@@ -4,7 +4,7 @@ from attestrwa.eas import DecisionData, decode_decision, encode_decision
 from attestrwa.rpc import RpcError, decode_attestation, decode_deal
 from attestrwa.verify import FAIL, PASS, SKIP, verify
 
-from .conftest import ESCROW, UID, FakeChain, encode_attestation, envelope_for
+from .conftest import ESCROW, UID, FakeChain, encode_attestation, envelope_for, make_body
 
 
 def _status(report, check_id):
@@ -32,6 +32,8 @@ ONCHAIN_CHECKS = (
     "attestation.attester",
     "attestation.not_revoked",
     "attestation.time",
+    "attestation.supersedes",
+    "evaluation.block",
     "escrow.config",
     "escrow.deal",
     "escrow.attester_trusted",
@@ -163,6 +165,41 @@ def test_revoked_attestation_fails(approve_envelope, chain) -> None:
 def test_attestation_older_than_the_deposit_fails(approve_envelope, chain) -> None:
     chain.attestation["time"] = approve_envelope["record"]["subject"]["deposited_at"] - 1
     assert _status(verify(approve_envelope, rpc=chain), "attestation.time") == FAIL
+
+
+def test_attestation_older_than_the_claimed_evaluation_fails(approve_envelope, chain) -> None:
+    """Inputs from one moment cannot be passed off as a later evaluation."""
+    chain.attestation["time"] = approve_envelope["record"]["evaluation"]["evaluated_at"] - 1
+    assert _status(verify(approve_envelope, rpc=chain), "attestation.time") == FAIL
+
+
+def test_evaluation_time_must_be_the_timestamp_of_the_evaluation_block(approve_envelope, chain):
+    block = approve_envelope["record"]["evaluation"]["block_number"]
+    chain.block_times[block] += 5
+    assert _status(verify(approve_envelope, rpc=chain), "evaluation.block") == FAIL
+
+
+def test_unavailable_evaluation_block_is_skipped_not_failed(approve_envelope, chain) -> None:
+    chain.block_times.clear()
+    report = verify(approve_envelope, rpc=chain)
+    assert _status(report, "evaluation.block") == SKIP and report.ok
+
+
+def test_supersedes_must_match_the_attestation_reference(pack, registry) -> None:
+    earlier = "0x" + "5e" * 32
+    body = make_body(pack, registry, supersedes=earlier)
+
+    honest = FakeChain(body)
+    honest.attestation["ref_uid"] = earlier
+    assert _status(verify(envelope_for(body), rpc=honest), "attestation.supersedes") == PASS
+
+    unrelated = FakeChain(body)  # refUID stays zero
+    assert _status(verify(envelope_for(body), rpc=unrelated), "attestation.supersedes") == FAIL
+
+
+def test_attestation_referencing_something_the_record_does_not_name_fails(approve_envelope, chain):
+    chain.attestation["ref_uid"] = "0x" + "5e" * 32
+    assert _status(verify(approve_envelope, rpc=chain), "attestation.supersedes") == FAIL
 
 
 def test_escrow_wired_to_another_schema_fails(approve_envelope, chain) -> None:

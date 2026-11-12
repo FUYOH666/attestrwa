@@ -249,10 +249,16 @@ class FakeChain:
         self.trusted = {body["attester"]["address"]}
         self.sanctioned: set[str] = set()
         self.history_available = True
+        self.block_times = {body["evaluation"]["block_number"]: body["evaluation"]["evaluated_at"]}
         self.calls: list[tuple[str, str, int | str]] = []
 
     def chain_id(self) -> int:
         return self.chain
+
+    def block(self, tag: int | str = "latest") -> tuple[int, int]:
+        if not self.history_available or tag not in self.block_times:
+            raise RpcError("eth_getBlockByNumber failed: pruned history unavailable")
+        return tag, self.block_times[tag]
 
     def eth_call(self, to: str, data: bytes, block: int | str = "latest") -> bytes:
         self.calls.append((to, to_hex(data), block))

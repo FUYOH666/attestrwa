@@ -1,8 +1,10 @@
 """Turn a policy's input declarations into recorded inputs.
 
-Each input is fetched from the kind of source the policy names, and the
-source is written into the record next to the value. A value the policy
-expects from the chain or a registry can never be taken from the caller.
+The policy says, for every input, what its source is: which subject field,
+which contract call about which party, which registry. This module fetches
+exactly that and writes the source into the record next to the value. A
+value the policy expects from the chain or a registry can never be taken
+from the caller.
 """
 
 from __future__ import annotations
@@ -19,20 +21,9 @@ from attestrwa.rpc import RpcError, calldata
 from app.chain import Rpc
 from app.errors import ConfigError, InputError, UpstreamError
 
-_PARTIES = ("buyer", "payee")
-
-
-def _party(spec: InputSpec, subject: Mapping[str, Any]) -> str:
-    party = spec.params.get("of")
-    if party not in _PARTIES:
-        raise ConfigError(f"policy input {spec.name!r}: 'of' must be one of {', '.join(_PARTIES)}")
-    return subject[party]
-
 
 def _subject_input(spec: InputSpec, subject: Mapping[str, Any]) -> dict[str, Any]:
-    field = spec.params.get("field")
-    if field not in subject:
-        raise ConfigError(f"policy input {spec.name!r}: unknown subject field {field!r}")
+    field = spec.params["field"]
     try:
         value = expected_subject_value(subject, field, spec.type)
     except RecordError as exc:
@@ -45,32 +36,30 @@ def _subject_input(spec: InputSpec, subject: Mapping[str, Any]) -> dict[str, Any
     }
 
 
-def _sanctions_input(
-    spec: InputSpec,
-    subject: Mapping[str, Any],
-    rpc: Rpc,
-    oracle: str,
-    block_number: int,
+def _onchain_input(
+    spec: InputSpec, subject: Mapping[str, Any], rpc: Rpc, block_number: int
 ) -> dict[str, Any]:
-    if spec.type != "bool":
-        raise ConfigError(f"policy input {spec.name!r}: the sanctions oracle returns a bool")
-    address = _party(spec, subject)
-    data = calldata("isSanctioned(address)", address)
+    chain_id = subject["chain_id"]
+    contract = spec.params["contracts"].get(str(chain_id))
+    if contract is None:
+        raise ConfigError(f"policy input {spec.name!r} names no contract for chain {chain_id}")
+    call = spec.params["call"]
+    data = calldata(call, *(subject[arg] for arg in spec.params["args"]))
     try:
-        result = rpc.eth_call(oracle, data, block_number)
+        result = rpc.eth_call(contract, data, block_number)
         value = expected_onchain_value(to_hex(result), spec.type)
     except (RpcError, RecordError) as exc:
-        # Fail closed: an unreadable screening source never becomes "not sanctioned".
-        raise UpstreamError(f"sanctions oracle read failed for {spec.name!r}: {exc}") from exc
+        # Fail closed: an unreadable source never becomes a default value.
+        raise UpstreamError(f"on-chain read failed for {spec.name!r}: {exc}") from exc
     return {
         "name": spec.name,
         "type": spec.type,
         "value": value,
         "source": {
             "kind": "onchain",
-            "chain_id": subject["chain_id"],
-            "to": oracle,
-            "call": "isSanctioned(address)",
+            "chain_id": chain_id,
+            "to": contract,
+            "call": call,
             "data": to_hex(data),
             "block_number": block_number,
             "result": to_hex(result),
@@ -81,9 +70,12 @@ def _sanctions_input(
 def _registry_input(
     spec: InputSpec, subject: Mapping[str, Any], registry: Registry, registry_ref: str
 ) -> dict[str, Any]:
-    if spec.type != "bool":
-        raise ConfigError(f"policy input {spec.name!r}: registry membership is a bool")
-    key = _party(spec, subject)
+    if spec.params["registry_id"] != registry.registry_id:
+        raise ConfigError(
+            f"policy input {spec.name!r} needs registry {spec.params['registry_id']!r}, "
+            f"this attester has {registry.registry_id!r}"
+        )
+    key = subject[spec.params["of"]]
     return {
         "name": spec.name,
         "type": spec.type,
@@ -120,7 +112,6 @@ def resolve_inputs(
     declared: Mapping[str, Any],
     declared_by: str,
     rpc: Rpc,
-    oracle: str,
     registry: Registry,
     registry_ref: str,
 ) -> list[dict[str, Any]]:
@@ -135,18 +126,16 @@ def resolve_inputs(
 
     inputs: list[dict[str, Any]] = []
     for spec in pack.inputs:
-        provider = spec.params.get("provider")
         if spec.source == "subject":
             inputs.append(_subject_input(spec, subject))
-        elif spec.source == "onchain" and provider == "sanctions_oracle":
-            inputs.append(_sanctions_input(spec, subject, rpc, oracle, block_number))
-        elif spec.source == "registry" and provider == "payee_registry":
+        elif spec.source == "onchain":
+            inputs.append(_onchain_input(spec, subject, rpc, block_number))
+        elif spec.source == "registry":
             inputs.append(_registry_input(spec, subject, registry, registry_ref))
         elif spec.source == "declared":
             inputs.append(_declared_input(spec, declared, declared_by))
         else:
             raise ConfigError(
-                f"policy input {spec.name!r}: this attester has no "
-                f"{spec.source} provider named {provider!r}"
+                f"policy input {spec.name!r}: this attester has no {spec.source} provider"
             )
     return inputs
