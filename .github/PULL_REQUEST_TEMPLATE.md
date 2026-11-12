@@ -1,38 +1,27 @@
-<!--
-Thanks for opening a PR against AttestRWA.
+## What does this pull request do
 
-Keep this template; check each box that applies.
--->
+<!-- One to three sentences: what changes and why. -->
 
-## What does this PR do
+## Area
 
-<!-- 1–3 sentences. What changes, why now. -->
+- [ ] Record format or specification (`spec/`)
+- [ ] Library and verifier (`packages/attestrwa`)
+- [ ] Contracts (`contracts/`)
+- [ ] Attester (`apps/api`)
+- [ ] Web UI (`apps/web`)
+- [ ] Scripts, CI or docs
 
-## Type of change
+## Checks
 
-- [ ] Contracts (Solidity)
-- [ ] Backend (FastAPI / Python)
-- [ ] Frontend (Next.js)
-- [ ] Scripts / dev tooling
-- [ ] Docs / README
-- [ ] CI / GitHub config
-- [ ] Other (please describe)
+- [ ] `cd packages/attestrwa && uv run pytest -q`
+- [ ] `cd apps/api && uv run pytest -q`
+- [ ] `cd contracts && forge fmt --check && forge test`, and Slither clean at medium and above if a contract changed
+- [ ] `cd apps/web && pnpm test && pnpm run build` if the web app changed
+- [ ] `./scripts/e2e_rwa_flow.sh` and `./scripts/e2e_rwa_reject.sh` if the flow changed
+- [ ] `CHANGELOG.md` and the affected docs are updated
+- [ ] No secrets, private keys, personal paths or internal addresses in tracked files
 
-## Verification checklist
+## Format impact
 
-- [ ] `cd contracts && forge test` — green locally
-- [ ] `cd apps/api && uv run pytest -q` — green locally
-- [ ] `slither contracts/src/SettlementEscrow.sol` — zero high/medium findings (or justify in this PR)
-- [ ] `./scripts/e2e_rwa_flow.sh` — passes against the local dev fork
-- [ ] `./scripts/e2e_rwa_reject.sh` — passes against the local dev fork
-- [ ] Updated `CHANGELOG.md` with a new entry
-- [ ] No secrets committed: `.env*` only, no real private keys, no TailScale IPs, no internal hostnames
-- [ ] Updated affected docs under `docs/` (especially if the public API or schema changed)
-
-## Linked issues / context
-
-<!-- Closes #123, follow-up of #456, etc. -->
-
-## Screenshots / on-chain artefacts (if relevant)
-
-<!-- BaseScan tx, EAS Scan attestation, Vercel preview URL. -->
+<!-- Does this change the canonical bytes of a record, the meaning of a member,
+     the rule semantics or the EAS schema? If yes, say which spec version it targets. -->

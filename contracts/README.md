@@ -1,62 +1,32 @@
-# AttestRWA — Smart Contracts
+# Contracts
 
-> Foundry workspace. Will hold `SettlementEscrow.sol` and `MockUSDC.sol`
-> starting Week 2 of the AttestRWA pivot.
+A [Foundry](https://book.getfoundry.sh) project.
 
-## Status
+| File | What |
+|---|---|
+| `src/SettlementEscrow.sol` | Reference consumer of decision records: holds a deposit and settles it on a `SettlementDecision` attestation. |
+| `src/MockUSDC.sol` | A 6-decimal demo token anyone can mint. For local and testnet use only. |
+| `script/Deploy.s.sol` | Registers the schema if needed, deploys the token (unless one is given) and the escrow. |
+| `test/SettlementEscrow.t.sol` | Unit and fuzz tests against the real EAS and SchemaRegistry contracts. |
+| `test/SettlementEscrow.invariants.t.sol` | Invariants under random deposits, decisions, settlements and time jumps. |
+| `test/EscrowFixture.sol` | Shared setup: deploys EAS, registers the schema from `spec/eas-schema.txt`. |
 
-Week 0: scaffold only (this README + empty `src/`, `test/`, `script/`).
-Week 2: contracts, fuzz tests, invariants, slither audit, deploy script.
-
-## Planned layout (Week 2)
-
-```text
-contracts/
-├── README.md
-├── foundry.toml
-├── slither.config.json
-├── remappings.txt
-├── lib/                          # foundry-installed deps (eas, openzeppelin)
-├── src/
-│   ├── SettlementEscrow.sol      # main contract
-│   └── MockUSDC.sol              # demo stablecoin (mint to anyone)
-├── test/
-│   ├── SettlementEscrow.t.sol    # unit + integration
-│   └── invariants/
-│       └── SettlementEscrow.invariants.t.sol
-└── script/
-    └── Deploy.s.sol              # deploy to Base Sepolia
-```
-
-## Dependencies (planned)
-
-- [EAS Contracts](https://github.com/ethereum-attestation-service/eas-contracts) — `IEAS` interface
-- [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) — `ERC20`, `ReentrancyGuard`, `Ownable`
-- [forge-std](https://github.com/foundry-rs/forge-std) — testing utilities
-
-## Quick commands (after Week 2)
+Dependencies are not vendored. Install them at pinned versions:
 
 ```bash
+./scripts/install-contract-deps.sh      # from the repository root
 cd contracts
-forge install              # install deps
-forge build                # compile
-forge test -vvv            # run all tests with stack traces
-forge test --gas-report    # gas analysis
-forge coverage             # coverage report
-slither .                  # static analysis (zero high/medium target)
-
-# deploy to Base Sepolia
-forge script script/Deploy.s.sol --rpc-url https://sepolia.base.org --broadcast --verify
+forge fmt --check && forge build && forge test
 ```
 
-## Target metrics (Week 2 acceptance gate)
+Static analysis, as in CI:
 
-| Metric | Target |
-|--------|--------|
-| Foundry test coverage | ≥85% |
-| Slither high findings | 0 |
-| Slither medium findings | 0 |
-| Gas: `release()` | <120k gas |
-| Gas: `deposit()` | <90k gas |
-| Fuzz runs per invariant | ≥10000 |
-| BaseScan verification | green checkmark |
+```bash
+slither src/SettlementEscrow.sol \
+  --solc-remaps "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/ @eas/=lib/eas-contracts/contracts/ forge-std/=lib/forge-std/src/" \
+  --filter-paths "lib/" --exclude-low --exclude-informational --fail-medium
+```
+
+What the escrow checks is described in [docs/ATTESTATION_SCHEMA.md](../docs/ATTESTATION_SCHEMA.md); what it guarantees and what it does not, in [docs/THREAT_MODEL.md](../docs/THREAT_MODEL.md).
+
+The contracts have not been audited and must not be deployed to mainnet as they are.

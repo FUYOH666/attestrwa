@@ -1,273 +1,231 @@
-# AttestRWA
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+    <img src="docs/assets/banner-light.svg" alt="AttestRWA — prove why a settlement was allowed: decision records anchored on-chain with EAS" width="100%">
+  </picture>
+</p>
 
-> **Settlement Attestation Layer for RWA** — on-chain compliance bridge that
-> turns bank verification rules into machine-verifiable attestations, so
-> stablecoin payments for real-world assets release only when the deal is
-> bank-grade.
+<p align="center">
+  <a href="https://github.com/FUYOH666/attestrwa/releases/latest"><img src="https://img.shields.io/github/v/release/FUYOH666/attestrwa?color=047857&label=release" alt="Latest release"></a>
+  <a href="https://github.com/FUYOH666/attestrwa/actions/workflows/ci.yml"><img src="https://github.com/FUYOH666/attestrwa/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="spec/DECISION_RECORD_v0.1.md"><img src="https://img.shields.io/badge/Decision%20Record-v0.1-2EA44F" alt="Decision Record v0.1"></a>
+  <img src="https://img.shields.io/badge/EAS%20on-Base-0052FF" alt="EAS on Base">
+  <img src="https://img.shields.io/badge/status-testnet%20reference-9a6700" alt="Status: testnet reference implementation">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/FUYOH666/attestrwa?color=555" alt="Apache-2.0 license"></a>
+</p>
 
-[![CI](https://github.com/FUYOH666/attestrwa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FUYOH666/attestrwa/actions/workflows/ci.yml)
-[![Foundry tests](https://img.shields.io/badge/forge%20test-34%2F34-success)](contracts/test)
-[![pytest](https://img.shields.io/badge/pytest-75%2F75-success)](apps/api/tests)
-[![Slither](https://img.shields.io/badge/slither-0%20findings-success)](docs/SECURITY.md)
-[![Solidity](https://img.shields.io/badge/solidity-0.8.26-blue)](contracts/foundry.toml)
-[![Foundry](https://img.shields.io/badge/foundry-1.7.1-orange)](https://book.getfoundry.sh/)
-[![Network](https://img.shields.io/badge/network-Base%20Sepolia-blue)](https://sepolia.basescan.org/)
-[![EAS Schema](https://img.shields.io/badge/EAS%20schema-0x1f64ec96%E2%80%A6-7c3aed)](docs/ATTESTATION_SCHEMA.md)
-[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
-[![Hackathon](https://img.shields.io/badge/hackathon-SEA%20Blockchain%20Week%202026-purple)](https://www.seablockchainweek.org/hackathon)
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#what-a-record-proves">What a record proves</a> ·
+  <a href="#for-ai-agents">For AI agents</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="README.ru.md">Русский</a>
+</p>
 
-**Author:** [Aleksandr Mordvinov](https://github.com/FUYOH666) ·
-**Repository:** [github.com/FUYOH666/attestrwa](https://github.com/FUYOH666/attestrwa) ·
-**85-second demo:** [youtube.com/shorts/BipB2qPzZz0](https://youtube.com/shorts/BipB2qPzZz0) (subtitles toggle-able)
+**Prove why a settlement was allowed — to anyone, after the fact.** AttestRWA turns a compliance decision about a stablecoin settlement into a *decision record*: which policy version was applied, which inputs were used and where each came from, which rules held. The record's hash is anchored on-chain with the [Ethereum Attestation Service](https://attest.org), an escrow settles only on that decision, and anyone holding the record can re-check it with one command. It is a format, a verifier and a reference implementation for teams that must later explain a decision to an auditor, a counterparty or a regulator.
 
----
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/how-it-works-dark.svg">
+    <img src="docs/assets/how-it-works-light.svg" alt="A buyer deposits into the escrow; the attester reads the deal and the policy's inputs from their sources and writes a decision record; the record's hash is attested with EAS; the escrow releases or refunds on that decision; anyone can verify the record afterwards" width="100%">
+  </picture>
+</p>
 
-## Two generations, one repo
+## Why
 
-```mermaid
-flowchart TB
-  subgraph v05 ["archive/v0.5 — Bankable Property Network"]
-    thailand["Thailand property B2B settlement"]
-    rag05["RAG + Closing Passport + payee mismatch"]
-  end
+A compliance check before a payment is easy to run and hard to prove. The decision is made inside one company's systems; what everyone else sees later is the outcome. Which policy was in force that day, which screening result was used, whether the payee was the one the buyer meant — these are reconstructed from logs, if they can be reconstructed at all.
 
-  subgraph v1 ["main v1.0 — AttestRWA"]
-    eas["EAS SettlementApproval schema"]
-    escrow["SettlementEscrow.sol"]
-    attester["FastAPI attester + Compliance DSL"]
-  end
+On-chain policy engines and gated tokens answer "may this transfer happen?". AttestRWA answers the question that comes afterwards: **"why was it allowed, and can I check that myself?"** It does not replace screening vendors or policy engines; it records what they said, in a form that does not depend on trusting the party that made the decision. See [where it fits](docs/LANDSCAPE.md).
 
-  v05 -->|"pivot May 2026, SEABW"| v1
-  rag05 -->|"repurposed"| attester
-```
+## Quick start
 
-Details: [`docs/PIVOT.md`](docs/PIVOT.md) · Ecosystem research:
-[`docs/ECOSYSTEM_RESEARCH.md`](docs/ECOSYSTEM_RESEARCH.md) · Integration RFC:
-[`docs/rfc/0001-settlement-eligibility-composition.md`](docs/rfc/0001-settlement-eligibility-composition.md)
-
----
-
-## Hook (one sentence)
-
-> RWA's bottleneck in 2026 is not tokenization — it's compliance.
-> We don't compete with Centrifuge or RealT; we're the layer they plug into.
-
-**Integrators:** start at [`docs/FOR_INTEGRATORS.md`](docs/FOR_INTEGRATORS.md) ·
-Funding: [`FUNDING.md`](FUNDING.md)
-
-## What you see when you open the demo (90 seconds)
-
-1. **Frame** (10 s): "RWA settlements grew 8x in 2026. Banks still can't participate."
-2. **Buyer wallet** (15 s) sends 500K Mock USDC to `SettlementEscrow` on Base Sepolia.
-3. **Attester** (FastAPI, 20 s) detects pending settlement, reads developer
-   feed, runs Property Shield + RAG-assisted evidence, signs an EAS
-   `SettlementApproval` attestation.
-4. **Branch A (HAPPY)** — attestation valid → escrow releases USDC to verified
-   payee → on-chain Closing Passport hash visible on BaseScan.
-   **Branch B (REJECT)** — payee mismatch (`SRL Holding 2026` vs
-   `Siam Riverside Living`) → attestation rejected → escrow refunds buyer →
-   audit log on-chain.
-5. **Story close** (15 s): "One attestation schema. Any RWA. Any bank.
-   Stablecoins meet compliance — without trusting either side."
-
-## What's on-chain
-
-### Dev simulation (Anvil fork of Base Sepolia — port 8545, chain 84532)
-
-Spin up the full stack in one command: `./scripts/dev-chain.sh`. See
-[`docs/DEV_SIMULATION.md`](DEV_SIMULATION.md).
-
-| Artefact | Address / UID |
-|----------|---------------|
-| `SettlementApproval` EAS Schema UID | `0x1f64ec96216b0381dc4443b7378c57485f2217656537e8ea36f0b23af047cc96` |
-| EAS contract (canonical) | `0x4200000000000000000000000000000000000021` |
-| SchemaRegistry (canonical) | `0x4200000000000000000000000000000000000020` |
-| Attester EOA (dev) | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` (Anvil acc 0) |
-| `SettlementEscrow.sol` | `0x54D4962847bf85AB71a1Fc984510dc12D3feA1D8` |
-| `MockUSDC.sol` | `0xeba5CEc9257045Df0B44eA784F9a7Fa07DeeF6d4` |
-
-### Distribution channels (live on the dev stack)
-
-| Channel | Where |
-|---------|-------|
-| Farcaster Frame | `GET /api/frame/attest?deal_id=…&decision=…` returns Frame HTML + inline SVG image; `POST` is the button handler. Local: <http://localhost:8080/api/frame/attest?decision=approve>. |
-| Dune Analytics queries | [`docs/DUNE_QUERIES.md`](docs/DUNE_QUERIES.md) — copy-paste into Dune once contracts are public. |
-| E2E happy demo | `./scripts/e2e_rwa_flow.sh` — buyer deposits, attester signs EAS attestation, escrow releases to verified payee. |
-| E2E reject demo | `./scripts/e2e_rwa_reject.sh` — buyer instructs impostor payee, attester signs reject, escrow refuses release, buyer refunds. |
-
-### Real Base Sepolia (optional — public proof)
-
-Deploy and smoke on real testnet (local Anvil demo unchanged):
+Requirements: [Foundry](https://book.getfoundry.sh/getting-started/installation), [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/installation) with Node 22.18 or newer. No wallet and no faucet: the demo runs on a local fork of Base Sepolia, with the real EAS contracts and the real Chainalysis sanctions oracle.
 
 ```bash
-# Configure PROD_* in .env, then:
-./scripts/deploy-public-testnet.sh
-./scripts/public-attestation-smoke.sh
+git clone https://github.com/FUYOH666/attestrwa.git && cd attestrwa
+./scripts/demo-mode.sh        # fork, contracts, attester on :8080, web UI on :3000
+./scripts/e2e_rwa_flow.sh     # deposit -> APPROVE -> record verified -> release
+./scripts/e2e_rwa_reject.sh   # deposit -> attacks refused -> REJECT -> verified -> refund
 ```
 
-| Artefact | Link |
-|----------|------|
-| Escrow | Run deploy script → BaseScan link printed |
-| Schema | [EAS Scan (deterministic UID)](https://base-sepolia.easscan.org/schema/view/0x1f64ec96216b0381dc4443b7378c57485f2217656537e8ea36f0b23af047cc96) |
-| Sample attestation UID | Run `./scripts/public-attestation-smoke.sh` — UID printed for README / Dune |
+Each script ends by running the verifier in strict mode on the record it just produced:
 
-See [`docs/DEV_SIMULATION.md`](docs/DEV_SIMULATION.md) for env flip between local fork and public testnet.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/verify-cli-dark.svg">
+    <img src="docs/assets/verify-cli-light.svg" alt="Output of attestrwa verify: 24 checks passed across record, policy, registry and on-chain groups; result VERIFIED" width="100%">
+  </picture>
+</p>
 
-### Real Base Sepolia (Week 3 — legacy table)
+To try only the verifier, without cloning, check a published test vector offline:
 
-| Artefact | Status |
-|----------|--------|
-| Schema UID | Same as dev (deterministic) — register on real Base Sepolia in 60 s with `cast send`, see `docs/ATTESTATION_SCHEMA.md` § 2. |
-| Attester EOA (real, public address) | Generated via `cast wallet new`, funded via the Alchemy Base Sepolia faucet. |
-| BaseScan deploy link | Created when `./scripts/deploy-public-testnet.sh` runs with `PROD_*` in `.env`. |
-| EAS Scan schema link | <https://base-sepolia.easscan.org/schema/view/0x1f64ec96216b0381dc4443b7378c57485f2217656537e8ea36f0b23af047cc96> (resolves once registered on the real testnet). |
-| Dune dashboard | Created from `docs/DUNE_QUERIES.md` queries once a public-testnet attestation exists. |
-
-## Architecture (minimal)
-
-```text
-Buyer wallet  --USDC-->  SettlementEscrow.sol  --reads-->  EAS Registry
-                              ^                                ^
-                              | release/refund                 | write attestation
-                              |                                |
-                              +--------- Attester (FastAPI) ---+
-                                              |
-                                              v
-                              Compliance Engine: Property Shield + RAG + Capital Map
-                                              |
-                                              v
-                              Developer Feed (synthetic SSOT)
+```bash
+curl -sO https://raw.githubusercontent.com/FUYOH666/attestrwa/main/spec/test-vectors/record-approve.json
+uvx --from "git+https://github.com/FUYOH666/attestrwa#subdirectory=packages/attestrwa" attestrwa verify record-approve.json
 ```
 
-Full diagram: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+Then open <http://localhost:3000/settle> to run a settlement by hand, and <http://localhost:3000/verify> to check a record in the browser. Stop everything with `./scripts/stop-demo-mode.sh`. Details: [docs/LOCAL_DEMO.md](docs/LOCAL_DEMO.md).
 
-## Why we pivoted (Pivot story)
+## Features
 
-We started this project as a B2B bank-grade settlement infrastructure for
-Thailand property — Closing Passport, payee verification, multi-channel
-buyer consult. Before SEABW 2026 we ran a brutal market check and saw that:
+- **Decision Record v0.1.** One canonical JSON document per decision: policy id, version and hash; every input with its source; every rule with its result; the outcome. [Specification](spec/DECISION_RECORD_v0.1.md), [JSON Schema](spec/decision-record-0.1.schema.json) and [test vectors](spec/test-vectors) are in the repository.
+- **Independent verifier.** `attestrwa verify` recomputes the hash, compares the record with the EAS attestation and with the escrow's own state, checks the policy and registry files byte for byte, re-runs every rule and re-queries on-chain inputs at their recorded block. Two dependencies, exit code 0, 1 or 2.
+- **Sources, not claims.** A policy declares where each input must come from: escrow state, a contract call, a registry file, or an explicit declaration. The attester reads the deal from the escrow and refuses any attempt by the caller to describe it.
+- **A real screening source.** The demo policy reads the [Chainalysis sanctions oracle](https://go.chainalysis.com/chainalysis-oracle-docs.html) on Base at the evaluation block, so the screening result in a record can be re-checked by anyone.
+- **Policy as hashed code.** Policies are YAML packs with a small typed rule language whose full grammar fits on a page; nothing is ever `eval`-ed. The policy hash is in the attestation, so "which version applied" has one answer.
+- **An escrow that obeys only exact, live decisions.** Release and refund go through one gate: right schema, addressed to this escrow, trusted attester, not revoked, not expired, about exactly this deal. Funds can only move to the payee the buyer named or back to the buyer.
+- **One decision per deal.** A repeat request returns the stored record. A new decision is possible only after the earlier attestation is revoked, and the new record names what it replaces.
+- **A browser verifier.** `/verify` checks a record with no server in between: the page recomputes the hash and reads the attestation and the escrow straight from an RPC endpoint.
 
-1. Bank compliance dashboards are already a saturated category (SAS,
-   Quantexa, Actimize).
-2. Real growth in 2026 is in RWA stablecoin settlements — and that market
-   has no programmable compliance bridge.
-3. Our strongest primitives (payee mismatch detection, capital
-   classification, evidence attestation) were already pointing toward an
-   on-chain layer.
+## What a record proves
 
-So we pivoted from B2B SaaS to a web3-native attestation primitive:
-**Settlement Attestation Layer for RWA**. Same engineering foundation,
-sharper edge, broader market. The AttestRWA stack — contracts, attester,
-demo scripts, and recorded video — shipped in roughly **four hours** of
-AI-assisted development for this hackathon.
+<p align="center">
+  <img src="docs/assets/record-view.png" alt="A decision record as shown in the web UI: decision REJECT under policy settlement-demo 2.0.0; five inputs, each with its source (registry file, on-chain call at a block, escrow state, declared and not verified); five rules, one failed" width="720">
+</p>
 
-The pivot is in this repo — see [`archive/v0.5/`](archive/v0.5/) for the
-previous generation. We kept what mattered (payee logic, capital
-classification, RAG, FastAPI/Next.js base, 64 pytest baseline), killed what
-didn't (buyer consult, WhatsApp bot, 8 panels, 45 docs).
+A verified record proves that:
 
-## Why this wins at SEA Blockchain Week 2026
+1. the attester committed, at a known time, to exactly these bytes;
+2. the decision is the result of applying the stated rules to the stated inputs;
+3. the rules are those of a policy file with a known hash;
+4. inputs taken from the escrow or from an on-chain call follow from that source, were read at one block, and can be re-queried there.
 
-- **Most RWA projects** build tokenization (Centrifuge, Maple, RealT,
-  Polytrade) — we don't compete, we're the layer above. Full feature
-  comparison: [`docs/COMPARISON.md`](docs/COMPARISON.md).
-- **Most compliance projects** are KYC (Sumsub, Persona) — we're on-chain
-  attestation primitives, not identity.
-- **Most blockchain-property projects** tokenize titles — legal mess. We
-  attest settlement evidence, not ownership claims.
+It does **not** prove that an input from a registry, an off-chain provider or a declaration was true. The record makes the origin of every input explicit — the `declared` jurisdiction above is marked as not verified — so a reviewer can decide how much weight each one deserves. Address-list screening, for example, says nothing about a freshly created wallet.
 
-**Pitch line:** "We don't tokenize property. We tokenize the fact that a
-bank verified the deal."
+| | Policy engines and gated tokens | AttestRWA |
+|---|---|---|
+| Question answered | May this transfer happen? | Why was it allowed, and can a third party check? |
+| Output | An allow or deny at execution time | A replayable record plus an on-chain commitment |
+| Who can verify | The operator, inside its system | Anyone with the record and an RPC endpoint |
+| Relationship | — | Records what such systems decided; does not replace them |
 
-## Social impact
+A fuller comparison with named projects and sources: [docs/LANDSCAPE.md](docs/LANDSCAPE.md).
 
-RWA platforms today let anyone tokenize anything. AttestRWA adds the
-missing verifier: developer authenticity, payee authority, capital
-cleanliness. Buyers no longer wire stablecoins to unverified payees.
-Regulators get audit-grade evidence. Markets get fewer rug pulls.
-This is RWA growing up.
+## For AI agents
 
-## Open source & ecosystem (May 2026)
+The verifier is a library as well as a command:
 
-| Doc | Purpose |
-|-----|---------|
-| [`docs/ECOSYSTEM_RESEARCH.md`](docs/ECOSYSTEM_RESEARCH.md) | 42-repo GitHub sweep + integration candidates |
-| [`docs/QUANTUM_LEAP_BETS.md`](docs/QUANTUM_LEAP_BETS.md) | Top 5 non-linear leverage plays |
-| [`docs/OSS_OPERATING_PLAN_90DAY.md`](docs/OSS_OPERATING_PLAN_90DAY.md) | Community, metrics, funding map |
-| [`docs/OUTREACH_TARGETS.md`](docs/OUTREACH_TARGETS.md) | Shibui / Centrifuge / EAS outreach drafts |
-| [`docs/POLICY_EVOLUTION.md`](docs/POLICY_EVOLUTION.md) | Policy change without escrow migration |
-| [`docs/PRODUCTION_ROADMAP.md`](docs/PRODUCTION_ROADMAP.md) | Production engineering map |
-| [`examples/integrate-centrifuge-hook/`](examples/integrate-centrifuge-hook/README.md) | Transfer-hook integration cookbook |
+```python
+from pathlib import Path
+
+from attestrwa import load_policy, loads_strict, verify
+from attestrwa.rpc import JsonRpc
+
+report = verify(
+    loads_strict(Path("record.json").read_bytes()),   # refuses duplicate keys and floats
+    rpc=JsonRpc("https://sepolia.base.org"),
+    policy=load_policy("data/policies/settlement-demo-v2.yaml"),
+    recheck_inputs=True,
+)
+print(report.verdict)                                  # VERIFIED / NOT VERIFIED / CONSISTENT (...)
+for check in report.checks:
+    print(check.status, check.id, check.detail)
+```
+
+The local attester speaks plain HTTP on `http://127.0.0.1:8080` (OpenAPI at `/docs`). A request names a deal and nothing else:
+
+```bash
+curl -s http://127.0.0.1:8080/attest/settlement \
+  -H 'Content-Type: application/json' -H 'X-API-Key: local-demo-key' \
+  -d '{"chain_id": 84532, "escrow": "0x…", "deal_id": "0x…", "declared": {"jurisdiction": "TH"}}'
+```
+
+`GET /records/{deal_id}` returns the record, `POST /verify` runs the verifier on one. Reference: [docs/API.md](docs/API.md). For coding agents working on this repository: [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt).
+
+## How it works
+
+```mermaid
+flowchart LR
+    B["Buyer"] -->|"deposit(salt, payee, token, amount, deadline)"| E["SettlementEscrow"]
+    I["Integrator"] -->|"deal id + declared context"| A["Attester"]
+    E -->|"deal at block N"| A
+    O["Sanctions oracle"] -->|"isSanctioned at block N"| A
+    R["Payee registry file"] --> A
+    P["Policy pack (YAML)"] --> A
+    A -->|"decision record"| S["Record store"]
+    A -->|"attest: decision, policyHash, recordHash"| EAS["EAS"]
+    EAS -->|"getAttestation"| E
+    E -->|"release or refund"| X["Payee or buyer"]
+    S -.->|"record file"| V["attestrwa verify"]
+    EAS -.-> V
+    E -.-> V
+```
+
+- **The decision is a pure function.** `build_record` takes a policy and inputs and returns the record; approve if and only if every rule holds. There is no decision logic outside the policy, so replaying the rules reproduces the decision.
+- **The attester reads, the caller only names.** Buyer, payee, token and amount come from the escrow at a fixed block. This is what closes the hole of the first version, where a buyer could ask for a decision about a payee of their choosing and use the rejection to exit early.
+- **Hash on-chain, record off-chain.** The attestation carries the outcome and two hashes. Reasons stay in the record, which the attester can keep private and disclose to those entitled to it.
+- **State reads, not receipts.** The verifier uses `eth_call` only. Public RPC endpoints prune old receipts and logs but keep serving contract state, so a record stays checkable.
+- **Real EAS in tests.** The Foundry suite deploys the actual EAS and SchemaRegistry contracts instead of a mock; the local demo forks Base Sepolia for the same reason.
+
+More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), [docs/POLICY_PACKS.md](docs/POLICY_PACKS.md), [docs/ATTESTATION_SCHEMA.md](docs/ATTESTATION_SCHEMA.md).
+
+## Status
+
+A testnet reference implementation, measured on 2026-11-12 at the tagged release:
+
+| Part | Checks |
+|---|---|
+| Contracts | 78 Foundry tests: 71 unit and fuzz cases against the real EAS contracts, 3 invariants, 4 for the demo token. Slither reports nothing at medium or above (one documented suppression). |
+| Library and verifier | 343 tests, including canonicalisation cross-checked against an independent RFC 8785 library. |
+| Attester | 73 tests on an in-memory chain, including the refused attacks. |
+| End to end | Approve and reject paths on a fork of Base Sepolia; each record verified in strict mode (24 checks). |
+
+What it is not: it has had **no professional security audit**, it is **not deployed to mainnet**, the demo token is freely mintable, and the payee registry and policy are synthetic. A public Base Sepolia deployment with published records is the next step on the [roadmap](docs/ROADMAP.md). Nothing here is legal or compliance advice.
+
+## FAQ
+
+<details>
+<summary><b>Does this replace KYC, sanctions screening or a policy engine?</b></summary>
+
+No. Those produce the inputs and, often, the decision. AttestRWA records which inputs were used, from where, under which policy version, and lets a third party check that record. The reference attester has one real data source, the Chainalysis sanctions oracle, to show the pattern; a production deployment would add its own providers behind the same interface.
+</details>
+
+<details>
+<summary><b>Why put anything on-chain?</b></summary>
+
+For a timestamped commitment that the attester cannot later change, and so that a contract can act on the decision. Only the outcome and two hashes go on-chain. The record itself can stay private.
+</details>
+
+<details>
+<summary><b>Is a rejection public?</b></summary>
+
+The attestation says that a decision with outcome "reject" exists for a deal and names the payee address; it does not say why. That is still information about an address, and for some uses that alone is too much. The format works equally with approvals only, or with attestations on a private chain.
+</details>
+
+<details>
+<summary><b>What if the attester key is stolen?</b></summary>
+
+The thief can approve or reject deals, but cannot redirect money: the escrow pays only the payee the buyer named, or the buyer. The owner removes the attester with `setAttester(address, false)`, which invalidates every decision it has outstanding. Owner and attester are separate keys by construction. See the [threat model](docs/THREAT_MODEL.md).
+</details>
+
+<details>
+<summary><b>Which chains?</b></summary>
+
+Any chain with EAS. The reference targets Base and Base Sepolia, where EAS is a predeploy. The record format itself is not tied to an escrow or to a chain; `subject.kind` and `anchor.kind` leave room for other subjects and anchors.
+</details>
+
+<details>
+<summary><b>Why is the first decision on the local fork slow?</b></summary>
+
+Anvil fetches the EAS contract's storage from the public RPC the first time it is touched. A decision takes about ten seconds on a fresh fork.
+</details>
 
 ## Roadmap
 
-| When | What |
-|------|------|
-| **May 2026 (hackathon)** | AttestRWA pivot shipped: EAS schema, `SettlementEscrow`, attester service, approve/reject E2E, Farcaster Frame, Dune query pack, demo video, public repo |
-| **Q3 2026** | First exchange integration — Binance Settlement / OKX RWA / Bybit RWA pilot |
-| **Q4 2026** | First bank attester pilot (Thailand or Singapore) — paid fee per attestation |
-| **2027** | Multi-jurisdiction ASEAN expansion, L2 mainnet, compliance DSL marketplace |
+Next is a public Base Sepolia deployment with published records, then adapters for more input sources and signed off-chain records for flows that need no escrow. [docs/ROADMAP.md](docs/ROADMAP.md) has the list; [docs/HISTORY.md](docs/HISTORY.md) explains where the project came from.
 
-## Tech stack
+## For teams
 
-| Layer | Choice |
-|-------|--------|
-| L2 | Base Sepolia (testnet, fork via Anvil for dev) → Base mainnet (production) |
-| Attestations | EAS — canonical at `0x4200000000000000000000000000000000000021` |
-| Stablecoin | Mock USDC ERC-20 (demo); USDC / USDT (production) |
-| Contracts | Solidity 0.8.26 + Foundry 1.7 (33/33 tests + fuzz; slither clean — 0 findings) |
-| Wallet | wagmi + viem + RainbowKit (UI scaffold; CLI e2e demo lives in `scripts/`) |
-| Backend | Python 3.12 + FastAPI + uv + web3.py 7 + eth-account + eth-abi |
-| Compliance evidence | Qdrant + BGE-M3 + reranker (RAG over synthetic policy corpus) |
-| LLM (explainability only, optional) | LM Studio (Qwen-class) — schema-bound, never auto-decides |
-| Frontend | Next.js + TypeScript + pnpm |
-| Analytics | Dune Analytics — public queries in `docs/DUNE_QUERIES.md` |
-| Distribution | Farcaster Frame at `/api/frame/attest` |
+AttestRWA is free and open source; run it yourself. If you want decision records wired into your own settlement or compliance flow — your policy, your data sources, your chain, your retention rules — write to [private@scanovich.ai](mailto:private@scanovich.ai) or Telegram [@ScanovichAI](https://t.me/ScanovichAI).
 
-## Quickstart — one command, ~2 minutes
+## Contributing
 
-```bash
-# One-time installs
-curl -L https://foundry.paradigm.xyz | bash && source ~/.zshenv && foundryup
-curl -LsSf https://astral.sh/uv/install.sh | sh
-corepack enable && corepack prepare pnpm@latest --activate
+Issues and pull requests are welcome: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
-# Boot the entire stack: dev chain + contracts deployed + FastAPI + Next.js web
-./scripts/demo-mode.sh
-```
+## Acknowledgments
 
-Output ends with a `DEMO READY` block listing all addresses + URLs. Then:
+[Ethereum Attestation Service](https://attest.org) · [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) · [Foundry](https://github.com/foundry-rs/foundry) · [Chainalysis sanctions oracle](https://go.chainalysis.com/chainalysis-oracle-docs.html) · [viem](https://viem.sh) · [FastAPI](https://fastapi.tiangolo.com) · [Next.js](https://nextjs.org) · [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)
 
-```bash
-# Two end-to-end smokes (each ~15 s) — happy path and reject path
-./scripts/e2e_rwa_flow.sh
-./scripts/e2e_rwa_reject.sh
-
-# Cinematic UI: open http://localhost:3000/rwa-settlement-live
-# Farcaster Frame preview: open http://localhost:8080/api/frame/attest?decision=approve
-
-# Stop everything
-./scripts/stop-demo-mode.sh
-```
-
-The full hackathon recording walkthrough (terminal-only **and** UI+wallet
-paths) is in [`docs/HACKATHON_RECORDING_GUIDE.md`](docs/HACKATHON_RECORDING_GUIDE.md).
-
-> **Why this works without a faucet:** the dev chain is an Anvil fork of
-> real Base Sepolia, so the EAS protocol bytecode at the canonical
-> address `0x4200…0021` is the production code (4,121 bytes), not a
-> mock. Every attestation in the demo runs through the real EAS
-> protocol — only the chain itself is local.
-
-## What we don't build (explicit boundaries)
-
-- We don't tokenize property (legal mess).
-- We don't issue our own stablecoin.
-- We don't do KYC (integrate Sumsub/Persona later).
-- We don't run our own L1/L2.
-- AI does not autonomously move money — it helps regulated structures
-  review evidence faster, traceably, in a controlled environment.
-
-## License
-
-Apache-2.0. Schema, attester address, and contracts are public.
+Apache-2.0 License · maintained by [Aleksandr Mordvinov](https://github.com/FUYOH666).

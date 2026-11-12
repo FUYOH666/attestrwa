@@ -1,0 +1,51 @@
+pack_id: settlement-demo
+version: "2.0.0"
+description: >
+  Demonstration policy for an escrowed stablecoin settlement. Synthetic and
+  illustrative only; it is not legal or compliance advice.
+
+# Every name a rule may use: its type, the kind of source it must come from,
+# and what exactly that source is. The attester refuses to build a record,
+# and the verifier refuses to accept one, when an input arrives from another
+# kind of source, another subject field, another contract call or another party.
+inputs:
+  payee_registered:
+    type: bool
+    source: registry          # membership of the payee in the registry file
+    registry_id: demo-payees
+    of: payee
+  payee_sanctioned:
+    type: bool
+    source: onchain           # Chainalysis sanctions oracle, read at the evaluation block
+    call: isSanctioned(address)
+    args: [payee]
+    contracts:
+      "84532": "0x40c57923924b5c5c5455c48d93317139addac8fb"   # Base Sepolia
+      "8453": "0x3a91a31cb3dc49b4db9ce721f50a9d076c8d739b"    # Base
+  buyer_sanctioned:
+    type: bool
+    source: onchain
+    call: isSanctioned(address)
+    args: [buyer]
+    contracts:
+      "84532": "0x40c57923924b5c5c5455c48d93317139addac8fb"
+      "8453": "0x3a91a31cb3dc49b4db9ce721f50a9d076c8d739b"
+  amount:
+    type: int
+    source: subject           # read from the escrow's own deal state
+    field: amount
+  jurisdiction:
+    type: string
+    source: declared          # stated by the authenticated integrator, not verified
+
+rules:
+  - id: payee-is-registered
+    require: payee_registered == true
+  - id: payee-not-sanctioned
+    require: payee_sanctioned == false
+  - id: buyer-not-sanctioned
+    require: buyer_sanctioned == false
+  - id: amount-within-limit
+    require: amount <= 1000000000000
+  - id: supported-jurisdiction
+    require: jurisdiction == "TH" or jurisdiction == "SG" or jurisdiction == "AE"

@@ -6,18 +6,20 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting an idea. AttestRWA is an infrastructure project — small,
-        composable changes that move us toward production attester pilots are most welcome.
+        Thanks for suggesting an idea. Small, composable changes are the easiest to review:
+        a new input source, a verifier check, a clarification of the specification.
 
   - type: dropdown
     id: area
     attributes:
       label: Area
       options:
-        - Contracts (SettlementEscrow / MockUSDC / EAS integration)
-        - Backend (FastAPI attester / RAG / DSL)
-        - Frontend (Next.js / wallet UI / Farcaster Frame)
-        - Scripts (dev-chain / deploy / e2e)
+        - Record format or specification
+        - Library and verifier (packages/attestrwa)
+        - Contracts (SettlementEscrow)
+        - Attester (apps/api)
+        - Web UI (apps/web)
+        - Scripts (local fork, deploy, end to end)
         - Docs
         - CI / GitHub config
         - Other
@@ -37,7 +39,7 @@ body:
     attributes:
       label: Proposed approach
       placeholder: |
-        e.g. Add per-attester rate limiting in the FastAPI attester service.
+        e.g. Let a policy read ERC-7943 canTransfer as an on-chain input.
         e.g. Add `attestation.refUID` linking to a parent batch attestation.
 
   - type: textarea

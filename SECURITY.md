@@ -1,69 +1,41 @@
-# Security Policy
+# Security
 
-AttestRWA is hackathon-stage infrastructure with no professional audit yet.
-We take security seriously and welcome responsible disclosure.
+AttestRWA is a testnet reference implementation. It has had no professional security audit and is not deployed to mainnet.
 
 ## Supported versions
 
-| Version | Supported |
-|---------|-----------|
-| 1.0.x   | yes (testnet only) |
-| 0.5.x   | archived; see `archive/v0.5/` for historical context |
-
-## Threat model and current audit posture
-
-The full threat model, the Slither audit posture (0 findings at low /
-medium / high), the Foundry coverage matrix, the wallet-trust assumptions,
-and the deferred items (HSM keys, multi-sig attester, formal STRIDE,
-external Trail of Bits scope) live in
-[`docs/SECURITY.md`](docs/SECURITY.md). Please read that document first
-before reporting an issue.
+Security fixes go to the latest release on `main`.
 
 ## Reporting a vulnerability
 
-Please **do not** open a public GitHub issue for a security problem.
+Please report privately first, not in a public issue:
 
-Two preferred channels:
+- GitHub [private vulnerability reporting](https://github.com/FUYOH666/attestrwa/security/advisories/new)
+- Email: [private@scanovich.ai](mailto:private@scanovich.ai)
+- Telegram: [@ScanovichAI](https://t.me/ScanovichAI)
 
-1. Open a private GitHub Security Advisory:
-   <https://github.com/FUYOH666/attestrwa/security/advisories/new>.
-   This is the fastest path and gives us a coordinated-disclosure surface.
-2. Email the project maintainer (see the GitHub profile at
-   <https://github.com/FUYOH666>) with the subject line
-   `attestrwa security: <one-line summary>`.
+You will get an answer within a few days. Please include the component (contract, library, attester, web UI, scripts), the commit or release, and steps to reproduce: a Foundry test, a `cast` or `curl` command, or a record file. Never send private keys.
 
-Include where reasonable:
+Reports are credited in the changelog unless you prefer otherwise. There is no bug bounty.
 
-- Affected component (contracts, attester service, web UI, scripts).
-- The exact commit hash or release tag.
-- A minimal reproduction (Foundry test, cast command, curl, etc.).
-- The on-chain artefacts if relevant (tx hash, attestation UID — never
-  private keys).
-- Your suggested severity (informational / low / medium / high / critical).
+## Scope
 
-## Our response process
+In scope:
 
-- We aim to acknowledge new reports within 72 hours.
-- For valid findings, we will agree on a fix window and a coordinated
-  disclosure date. Up to 90 days for non-critical issues; faster for
-  critical ones.
-- Once the fix lands, we credit you in the corresponding `CHANGELOG.md`
-  entry unless you ask to remain anonymous.
+- ways funds in `SettlementEscrow` could move to anyone other than a deal's payee or buyer, or be locked;
+- ways a caller could obtain a decision the policy and the sources do not support;
+- ways a record could pass `attestrwa verify` although it was altered or does not match the chain;
+- escapes from the rule language, and inputs that crash the verifier or the attester.
 
-## Bug bounty
+Out of scope:
 
-AttestRWA does **not** currently run a formal bug bounty. This will
-change once we begin a regulated bank-attester pilot (see
-`docs/ROADMAP.md` Q4 2026). Until then, please report responsibly out of
-goodwill; we will reciprocate with credit and rapid fixes.
+- anything that requires a compromised attester or owner key, beyond what the [threat model](docs/THREAT_MODEL.md) already states;
+- the demo token `MockUSDC`, which anyone may mint by design;
+- vulnerabilities in EAS, OpenZeppelin, Foundry or other upstream projects; please report those upstream.
 
-## Out of scope
+## Deployment notes
 
-- Mainnet exploits. We have not deployed to mainnet by design.
-- Issues that require already-compromised private keys (e.g. "if you
-  steal the attester key you can sign bogus attestations" — yes, that is
-  why revocation exists, see `docs/SECURITY.md` T1).
-- Vulnerabilities in upstream EAS, OpenZeppelin, or web3.py — please
-  report those to the upstream project.
-- DoS via spamming `MockUSDC.mint` on testnet — it is intentionally
-  open-mint for demo purposes.
+- The attester signs on-chain transactions. Give it a key that is trusted by the escrow and is **not** the escrow owner, and keep that key out of files that are tracked or shared.
+- `POST /attest/settlement` requires an API key; without `ATTESTRWA_API_KEYS` the instance refuses every request. Do not expose the attester without TLS in front of it.
+- The local scripts use the publicly known Foundry development mnemonic. Its accounts must never hold value on a real network.
+- The design's guarantees and remaining risks are in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).

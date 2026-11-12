@@ -1,0 +1,70 @@
+name: e2e
+
+# The full flow on a fork of Base Sepolia, and verification of the published
+# records against the public chain. Both need the public RPC, so they run on
+# demand and weekly rather than on every push.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  fork:
+    name: Approve and reject paths on a Base Sepolia fork
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install pinned Solidity dependencies
+        run: ./scripts/install-contract-deps.sh
+
+      - name: Start the fork and deploy
+        run: |
+          ./scripts/dev-chain.sh
+          ./scripts/deploy-contracts.sh
+
+      - name: Approve path
+        run: ./scripts/e2e_rwa_flow.sh
+
+      - name: Reject path (including the refused attacks)
+        run: ./scripts/e2e_rwa_reject.sh
+
+      - name: Logs on failure
+        if: failure()
+        run: tail -n 60 .run/*.log || true
+
+  published-records:
+    name: Published records against Base Sepolia
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Verify
+        working-directory: packages/attestrwa
+        run: |
+          set -e
+          found=0
+          for record in ../../examples/records/base-sepolia/*.json; do
+            [ -f "$record" ] || continue
+            found=1
+            uv run attestrwa verify "$record" --rpc https://sepolia.base.org \
+              --policy-dir ../../data/policies --registry ../../data/registry/payees.json
+          done
+          [ "$found" = "1" ] || echo "No published Base Sepolia records yet."

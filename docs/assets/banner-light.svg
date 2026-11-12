@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-label="AttestRWA — prove why a settlement was allowed: decision records anchored on-chain with EAS">
+<rect width="1280" height="360" rx="24" fill="#FFFFFF"/>
+<g transform="translate(88 92)"><g transform="scale(1.0)"><rect width="120" height="120" rx="30" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="2"/><rect x="24" y="30" width="72" height="10" rx="5" fill="#047857" opacity="1.0"/><rect x="24" y="52" width="56" height="10" rx="5" fill="#047857" opacity="0.55"/><rect x="24" y="74" width="36" height="10" rx="5" fill="#047857" opacity="0.3"/><circle cx="84" cy="84" r="21" fill="#047857"/><path d="M74 84 l7 7 l13 -14" fill="none" stroke="#F6F8FA" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+<text x="236" y="150" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="64" fill="#1F2328" font-weight="700" letter-spacing="-1.5">AttestRWA</text>
+<text x="238" y="196" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="23" fill="#59636E">Prove why a settlement was allowed.</text>
+<text x="238" y="232" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="23" fill="#59636E">Replayable decision records, anchored with EAS.</text>
+<g transform="translate(846 60)">
+<rect width="374" height="240" rx="18" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="2"/>
+<rect x="20" y="20" width="334" height="38" rx="9" fill="#FFFFFF" stroke="#047857" stroke-width="2"/>
+<text x="34" y="44" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#1F2328">$ attestrwa verify record.json</text>
+<path d="M24 84 l5 5 l9 -10" fill="none" stroke="#047857" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="48" y="90" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#1F2328">record hash = attestation</text>
+<path d="M24 114 l5 5 l9 -10" fill="none" stroke="#047857" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="48" y="120" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#1F2328">escrow holds this exact deal</text>
+<path d="M24 144 l5 5 l9 -10" fill="none" stroke="#047857" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="48" y="150" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#59636E">policy settlement-demo 2.0.0</text>
+<path d="M24 174 l5 5 l9 -10" fill="none" stroke="#047857" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="48" y="180" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#59636E">5 rules replayed, all match</text>
+<rect x="20" y="196" width="334" height="1.5" fill="#D0D7DE"/>
+<text x="22" y="222" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" fill="#047857" font-weight="700" letter-spacing="0.6">VERIFIED</text>
+<text x="352" y="222" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" fill="#59636E" text-anchor="end">decision APPROVE</text>
+</g></svg>

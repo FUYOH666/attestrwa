@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="957" viewBox="0 0 1280 957" role="img" aria-label="Output of attestrwa verify: 24 checks passed, record VERIFIED">
+<rect width="1280" height="957" rx="18" fill="#161B22" stroke="#30363D" stroke-width="2"/>
+<circle cx="34" cy="28" r="6" fill="#30363D"/><circle cx="54" cy="28" r="6" fill="#30363D"/><circle cx="74" cy="28" r="6" fill="#30363D"/>
+<text x="34" y="52" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#9DA7B3">$ attestrwa verify record.json --rpc $RPC --policy settlement-demo-v2.yaml --registry payees.json --recheck-inputs --strict</text>
+<text x="34" y="95" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">AttestRWA decision record: record.json</text>
+<text x="34" y="116" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#9DA7B3" xml:space="preserve">  deal      0xe6d632bca96bf38c6f51d8c0128ac9674cf5a54a27bd3a3f9972b2913e4d4ab1</text>
+<text x="34" y="137" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#9DA7B3" xml:space="preserve">  escrow    0x2100fcdb4ba229e717dfba29cb21114e0f592c67 on chain 84532</text>
+<text x="34" y="158" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#9DA7B3" xml:space="preserve">  decision  APPROVE under settlement-demo@2.0.0</text>
+<text x="34" y="179" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#9DA7B3" xml:space="preserve">  anchor    EAS attestation 0x842913e3a521c0a8e1597906a3ad2b77d27c10a0b667af1ae29d08a7f7c5d1fd</text>
+<text x="34" y="221" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" font-weight="700" xml:space="preserve">Record</text>
+<text x="50.2" y="242" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="242" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    record.structure  valid Decision Record v0.1</text>
+<text x="50.2" y="263" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="263" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    record.hash       record hash 0x55df862f36c6cae8121f8fa43cda2f17376038e08fdaded415a3deca7a879bdb</text>
+<text x="50.2" y="284" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="284" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    record.inputs     5 input(s); subject and on-chain values follow from their sources</text>
+<text x="50.2" y="305" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="305" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    record.replay     5 rule(s) re-evaluated from the recorded inputs; all results match</text>
+<text x="50.2" y="326" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="326" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    record.decision   decision APPROVE follows from the rules</text>
+<text x="34" y="368" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" font-weight="700" xml:space="preserve">Policy</text>
+<text x="50.2" y="389" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="389" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    policy.match  policy file settlement-demo@2.0.0 hashes to 0x37d3c037…64c71a; rules, input types and input sources match the record</text>
+<text x="34" y="431" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" font-weight="700" xml:space="preserve">Registry</text>
+<text x="50.2" y="452" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="452" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    registry.match  registry demo-payees@2026-11-12 hashes to 0x9d7765a1…27c9b1; 1 membership claim(s) confirmed</text>
+<text x="34" y="494" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" font-weight="700" xml:space="preserve">On-chain</text>
+<text x="50.2" y="515" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="515" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    chain.network            RPC serves chain 84532</text>
+<text x="50.2" y="536" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="536" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.exists       attestation 0x842913e3…c5d1fd found, made at 1794459321</text>
+<text x="50.2" y="557" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="557" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.schema       schema is SettlementDecision</text>
+<text x="50.2" y="578" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="578" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.record_hash  the attestation commits to exactly this record</text>
+<text x="50.2" y="599" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="599" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.policy_hash  on-chain policy hash matches the record</text>
+<text x="50.2" y="620" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="620" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.deal         deal id, payee, token and amount match the record</text>
+<text x="50.2" y="641" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="641" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.decision     on-chain decision is APPROVE</text>
+<text x="50.2" y="662" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="662" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.recipient    attestation is addressed to this escrow</text>
+<text x="50.2" y="683" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="683" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.attester     attested by 0x15d34aaf54267db7d7c367839aaf71a00a2c6a65</text>
+<text x="50.2" y="704" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="704" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.not_revoked  not revoked</text>
+<text x="50.2" y="725" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="725" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.time         attested after the deposit and the evaluation</text>
+<text x="50.2" y="746" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="746" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    attestation.supersedes   replaces no earlier decision</text>
+<text x="50.2" y="767" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="767" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    evaluation.block         evaluation time is the timestamp of block 57684045</text>
+<text x="50.2" y="788" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="788" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    escrow.config            escrow reads the same EAS contract and schema</text>
+<text x="50.2" y="809" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="809" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    escrow.deal              the escrow holds this exact deal (now released)</text>
+<text x="50.2" y="830" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="830" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    escrow.attester_trusted  the escrow trusts this attester</text>
+<text x="50.2" y="851" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700">✓</text>
+<text x="34" y="851" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#F0F6FC" xml:space="preserve">    inputs.onchain           2 on-chain input(s) re-queried at their recorded blocks; all results match</text>
+<text x="34" y="893" font-family="'SF Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13.5" fill="#34D399" font-weight="700" xml:space="preserve">Result: VERIFIED: 24 passed, 0 failed, 0 skipped</text>
+</svg>

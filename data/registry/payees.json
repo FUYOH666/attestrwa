@@ -1,0 +1,17 @@
+{
+  "registry_id": "demo-payees",
+  "version": "2026-11-12",
+  "note": "Synthetic demonstration registry. The addresses are public Anvil test accounts; the names are fictional.",
+  "payees": [
+    {
+      "address": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "id": "siam-riverside-living",
+      "name": "Siam Riverside Living Co., Ltd."
+    },
+    {
+      "address": "0x976ea74026e726554db657fa54763abd0c3a0aa9",
+      "id": "bangkok-landmark-group",
+      "name": "Bangkok Landmark Group Public Co., Ltd."
+    }
+  ]
+}

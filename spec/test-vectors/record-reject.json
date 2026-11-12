@@ -1,0 +1,136 @@
+{
+  "record": {
+    "spec": "attestrwa.decision-record/0.1",
+    "nonce": "0x000102030405060708090a0b0c0d0e0f",
+    "supersedes": null,
+    "subject": {
+      "kind": "escrow_deal",
+      "chain_id": 84532,
+      "escrow": "0xe5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+      "deal_id": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "buyer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "payee": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+      "token": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "amount": "580000000",
+      "deadline": 1780086400,
+      "deposited_at": 1780000000
+    },
+    "evaluation": {
+      "block_number": 57668489,
+      "evaluated_at": 1780000060
+    },
+    "policy": {
+      "pack_id": "settlement-demo",
+      "version": "2.0.0",
+      "sha256": "0x37d3c037ec8b748dfd36f230f2df68d9f154aa6c6ea32f2445d43592c164c71a",
+      "uri": "data/policies/settlement-demo-v2.yaml"
+    },
+    "inputs": [
+      {
+        "name": "payee_registered",
+        "type": "bool",
+        "value": false,
+        "source": {
+          "kind": "registry",
+          "ref": "data/registry/payees.json",
+          "sha256": "0x9d7765a1f3750169bbdf0f7b6a122ebb766d62b855b2b8116bf477928027c9b1",
+          "key": "0x90f79bf6eb2c4f870365e785982e1f101e93b906"
+        }
+      },
+      {
+        "name": "payee_sanctioned",
+        "type": "bool",
+        "value": false,
+        "source": {
+          "kind": "onchain",
+          "chain_id": 84532,
+          "to": "0x40c57923924b5c5c5455c48d93317139addac8fb",
+          "call": "isSanctioned(address)",
+          "data": "0xdf592f7d00000000000000000000000090f79bf6eb2c4f870365e785982e1f101e93b906",
+          "block_number": 57668489,
+          "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      {
+        "name": "buyer_sanctioned",
+        "type": "bool",
+        "value": false,
+        "source": {
+          "kind": "onchain",
+          "chain_id": 84532,
+          "to": "0x40c57923924b5c5c5455c48d93317139addac8fb",
+          "call": "isSanctioned(address)",
+          "data": "0xdf592f7d00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "block_number": 57668489,
+          "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      {
+        "name": "amount",
+        "type": "int",
+        "value": "580000000",
+        "source": {
+          "kind": "subject",
+          "field": "amount"
+        }
+      },
+      {
+        "name": "jurisdiction",
+        "type": "string",
+        "value": "TH",
+        "source": {
+          "kind": "declared",
+          "by": "integrator:demo"
+        }
+      }
+    ],
+    "rules": [
+      {
+        "id": "payee-is-registered",
+        "expression": "payee_registered == true",
+        "result": false
+      },
+      {
+        "id": "payee-not-sanctioned",
+        "expression": "payee_sanctioned == false",
+        "result": true
+      },
+      {
+        "id": "buyer-not-sanctioned",
+        "expression": "buyer_sanctioned == false",
+        "result": true
+      },
+      {
+        "id": "amount-within-limit",
+        "expression": "amount <= 1000000000000",
+        "result": true
+      },
+      {
+        "id": "supported-jurisdiction",
+        "expression": "jurisdiction == \"TH\" or jurisdiction == \"SG\" or jurisdiction == \"AE\"",
+        "result": true
+      }
+    ],
+    "decision": {
+      "outcome": "reject",
+      "code": 2,
+      "failed_rules": [
+        "payee-is-registered"
+      ]
+    },
+    "attester": {
+      "address": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+      "software": "attestrwa-attester/2.0.0"
+    },
+    "anchor": {
+      "kind": "eas",
+      "chain_id": 84532,
+      "eas": "0x4200000000000000000000000000000000000021",
+      "schema_uid": "0x1a86145e70ac5055683604a56201574b2c9edf0512ad08fc1368a9e7cb565135"
+    }
+  },
+  "record_hash": "0x45ec2302a1f23af3c31a7fc9e3f8b7948084be3f2934dc5136a7766201da6cc2",
+  "network": "test-vector",
+  "attestation": null,
+  "links": {}
+}

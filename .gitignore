@@ -1,22 +1,29 @@
+# Secrets and local configuration
 .env
-.venv/
-node_modules/
-.next/
-*.tsbuildinfo
-__pycache__/
-.pytest_cache/
+.env.*
+!.env.example
 *.pem
 *.key
 credentials.*
-.DS_Store
-.cursor/
-*.plan.md
-whatsapp_session/
-services/whatsapp-bridge/*.db
 
-# AttestRWA v1 dev chain
-.dev-chain.state
-.env.dev
+# Local run state: pids, logs, attester record store, chain and deployment state
+.run/
+*.state
+records/
+deployments/anvil-fork.json
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+*.tsbuildinfo
 
 # Foundry
 contracts/cache/
@@ -24,5 +31,7 @@ contracts/out/
 contracts/broadcast/
 contracts/lib/
 
-# Anvil / dev chain logs
-/tmp/attestrwa-anvil.*
+# Editors and OS
+.DS_Store
+.cursor/
+*.plan.md

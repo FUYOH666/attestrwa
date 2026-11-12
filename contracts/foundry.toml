@@ -5,7 +5,7 @@ libs = ["lib"]
 test = "test"
 script = "script"
 cache_path = "cache"
-solc_version = "0.8.26"
+solc_version = "0.8.28"
 optimizer = true
 optimizer_runs = 1_000_000
 via_ir = false
@@ -14,7 +14,7 @@ remappings = [
     "@eas/=lib/eas-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",
 ]
-fs_permissions = [{ access = "read", path = "./" }]
+fs_permissions = [{ access = "read", path = "./" }, { access = "read", path = "../spec" }]
 
 [fmt]
 line_length = 100
@@ -29,6 +29,6 @@ runs = 256
 max_test_rejects = 65_536
 
 [invariant]
-runs = 64
+runs = 128
 depth = 64
-fail_on_revert = false
+fail_on_revert = true
