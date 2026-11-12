@@ -208,7 +208,7 @@ A testnet reference implementation, measured on 2026-11-12 at the tagged release
 | Part | Checks |
 |---|---|
 | Contracts | 78 Foundry tests: 71 unit and fuzz cases against the real EAS contracts, 3 invariants, 4 for the demo token. Slither reports nothing at medium or above (one documented suppression). |
-| Library and verifier | 615 tests, including canonicalisation cross-checked against an independent RFC 8785 library, the Ed25519 test vector of RFC 8032, and both formats checked against their JSON Schemas. |
+| Library and verifier | 616 tests, including canonicalisation cross-checked against an independent RFC 8785 library, the Ed25519 test vector of RFC 8032, and both formats checked against their JSON Schemas. |
 | Attester | 77 tests on an in-memory chain, including the refused attacks. |
 | End to end | Approve and reject paths on a fork of Base Sepolia; each record verified in strict mode (24 checks). |
 | Signed cases | The two example records verified in strict mode with their documents (10 checks); the published 0.1 vectors are pinned by hash. |

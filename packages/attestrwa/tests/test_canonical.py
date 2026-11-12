@@ -102,3 +102,16 @@ def test_published_vectors_match_this_implementation_and_rfc8785() -> None:
 def test_the_strict_loader_reports_what_it_cannot_read_and_never_raises_anything_else(text):
     with pytest.raises(CanonicalError):
         loads_strict(text)
+
+
+def test_nesting_is_limited_by_the_loader_itself_not_by_the_interpreter() -> None:
+    from attestrwa.canonical import MAX_DEPTH
+
+    def nested(levels: int) -> str:
+        return "[" * levels + "]" * levels
+
+    assert loads_strict(nested(MAX_DEPTH)) is not None
+    assert loads_strict('{"a": ' * (MAX_DEPTH - 1) + "1" + "}" * (MAX_DEPTH - 1)) is not None
+    for text in (nested(MAX_DEPTH + 1), '{"a": ' * MAX_DEPTH + "[]" + "}" * MAX_DEPTH):
+        with pytest.raises(CanonicalError, match="nested too deeply"):
+            loads_strict(text)

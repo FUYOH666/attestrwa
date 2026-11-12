@@ -26,7 +26,7 @@ Decision records for decisions that have no escrow and no chain: the same record
 In code that 2.0.0 already had:
 
 - `decision.code` written as JSON `true` was accepted by the validator, although the specification and the schema require the integer.
-- A deeply nested JSON body, or one with an integer of thousands of digits, made the strict loader raise: a traceback from the command line and a `500` from `POST /verify`. It is now an invalid record (`422`, exit code 2).
+- A deeply nested JSON body, or one with an integer of thousands of digits, made the strict loader raise on some Python versions: a traceback from the command line and a `500` from `POST /verify`. It is now an invalid record (`422`, exit code 2) on every version; the loader itself refuses more than 32 levels of nesting.
 
 Found by an independent review of this version before release, and fixed:
 

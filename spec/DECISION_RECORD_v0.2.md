@@ -285,7 +285,9 @@ the 0.2 record.
 
 As in 0.1, section 7: a record is untrusted input, parsed strictly; a
 malformed record is reported as not verified; a check that cannot be
-performed is reported as skipped, not as passed and not as failed.
+performed is reported as skipped, not as passed and not as failed. An
+implementation MAY refuse a file nested more deeply than any valid record can
+be; the reference implementation refuses more than 32 levels.
 
 For a 0.2 record a verifier MUST additionally perform, and report separately:
 
